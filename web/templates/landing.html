@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block title %}首页{% endblock %}
+{% block page_class %}landing{% endblock %}
+
+{% block head %}
+<style>
+  .page.landing { max-width: 1500px; padding: 24px 28px 64px; }
+  .dashboard { display: block; }
+  .panel { background: #fff; border: 1px solid #e8ebf0; border-radius: 10px; overflow: hidden; }
+  .panel-head { min-height: 64px; padding: 16px 24px; border-bottom: 1px solid #e8ebf0; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+  .panel-title { font-size: 20px; font-weight: 700; color: #111827; }
+  .date-form { display: flex; align-items: center; gap: 10px; }
+  .date-control { position: relative; width: 160px; height: 40px; }
+  .date-display { width: 100%; height: 40px; padding: 8px 40px 8px 12px; background: #fff; color: #111827; cursor: pointer; }
+  .date-native { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+  .date-calendar { position:absolute; right:12px; top:12px; width:14px; height:14px; border:1.5px solid #667085; border-radius:2px; pointer-events:none; }
+  .date-calendar::before { content:""; position:absolute; left:-1.5px; right:-1.5px; top:3px; border-top:1.5px solid #667085; }
+  .date-calendar::after { content:""; position:absolute; left:3px; top:-3px; width:6px; height:3px; border-left:1.5px solid #667085; border-right:1.5px solid #667085; }
+  .date-separator { color: #9ca3af; }
+  .date-form button { height: 40px; padding: 0 18px; }
+  .status-grid { display: grid; grid-template-columns: repeat(9, minmax(92px, 1fr)); padding: 24px 12px 22px; overflow-x:auto; }
+  .status-item { min-width:92px; text-align: center; border-left: 1px solid #e5e7eb; color:inherit; padding:8px 4px; border-radius:8px; transition:background .15s; }
+  .status-item:first-child { border-left: 0; }
+  .status-item:hover { background:#f3f7fb; }
+  .status-value { font-size: 34px; line-height: 1.2; color: #243b5a; font-weight: 400; }
+  .status-item.primary .status-value { color: #1689f5; font-size: 40px; }
+  .status-label { margin-top: 10px; font-size: 16px; color: #111827; white-space: nowrap; }
+  .quick-actions { display:flex; gap:12px; margin-top:18px; overflow-x:auto; padding-bottom:2px; }
+  .quick-action { flex:1 0 150px; min-height:88px; padding:16px 18px; background: #fff; border: 1px solid #e8ebf0; border-radius: 12px; color: #1f2937; display: flex; align-items:center; gap:12px; transition: transform .18s, box-shadow .18s, border-color .18s; }
+  .quick-action:hover { transform: translateY(-3px); box-shadow: 0 12px 28px rgba(30,58,95,.12); border-color: #c8d5e5; }
+  .quick-action.primary { color: #fff; border: 0; background: radial-gradient(circle at 88% 18%, rgba(255,255,255,.22), transparent 38%), linear-gradient(135deg, #1e3a5f, #2f69a6); }
+  .quick-action.primary:hover { box-shadow: 0 14px 30px rgba(30,58,95,.28); }
+  .action-top { display: flex; align-items: center; gap: 10px; }
+  .action-icon { width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; background: #eef2f7; font-size: 21px; }
+  .primary .action-icon { background: rgba(255,255,255,.18); }
+  .action-arrow { display:none; }
+  .primary .action-arrow { color: #fff; }
+  .action-title { font-size: 16px; font-weight: 700; white-space:nowrap; }
+  @media (max-width: 1050px) {
+    .status-grid { grid-template-columns: repeat(9, 112px); }
+  }
+  @media (max-width: 720px) {
+    .page.landing { padding: 16px; }
+    .panel-head, .date-form { align-items: stretch; flex-direction: column; }
+    .date-control { width: 100%; }
+    .date-separator { display: none; }
+    .quick-action { flex-basis:140px; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<section class="dashboard">
+  <div class="panel">
+    <div class="panel-head">
+      <h1 class="panel-title">运单状态</h1>
+      <form class="date-form" method="get" action="/">
+        {% if user_id %}<input type="hidden" name="user_id" value="{{ user_id }}">{% endif %}
+        <label class="date-control">
+          <input class="date-display" type="text" value="{{ start_date }}" tabindex="-1" aria-hidden="true" readonly>
+          <input class="date-native" type="date" name="start_date" value="{{ start_date }}" aria-label="选择开始日期">
+          <span class="date-calendar" aria-hidden="true"></span>
+        </label>
+        <span class="date-separator">至</span>
+        <label class="date-control">
+          <input class="date-display" type="text" value="{{ end_date }}" tabindex="-1" aria-hidden="true" readonly>
+          <input class="date-native" type="date" name="end_date" value="{{ end_date }}" aria-label="选择结束日期">
+          <span class="date-calendar" aria-hidden="true"></span>
+        </label>
+        <button class="btn btn-primary" type="submit">查询</button>
+      </form>
+    </div>
+    <div class="status-grid">
+      <a class="status-item primary" href="/orders"><div class="status-value">{{ counts.total }}</div><div class="status-label">快递单量</div></a>
+      <a class="status-item" href="/orders?status=pending"><div class="status-value">{{ counts.pending }}</div><div class="status-label">待审核</div></a>
+      <a class="status-item" href="/orders?status=rejected"><div class="status-value">{{ counts.rejected }}</div><div class="status-label">审核失败</div></a>
+      <a class="status-item" href="/orders?status=pending_pickup"><div class="status-value">{{ counts.pending_pickup }}</div><div class="status-label">待揽收</div></a>
+      <a class="status-item" href="/orders?status=picked"><div class="status-value">{{ counts.picked }}</div><div class="status-label">已揽收</div></a>
+      <a class="status-item" href="/orders?status=transit"><div class="status-value">{{ counts.transit }}</div><div class="status-label">在途</div></a>
+      <a class="status-item" href="/orders?status=delivering"><div class="status-value">{{ counts.delivering }}</div><div class="status-label">派送中</div></a>
+      <a class="status-item" href="/orders?status=delivered"><div class="status-value">{{ counts.delivered }}</div><div class="status-label">已签收</div></a>
+      <a class="status-item" href="/orders?status=exception"><div class="status-value">{{ counts.exception }}</div><div class="status-label">异常单</div></a>
+    </div>
+  </div>
+</section>
+
+<section class="quick-actions" aria-label="常用功能">
+  <a class="quick-action primary" data-roles="employee,admin" href="/express">
+    <div class="action-top"><span class="action-icon">📦</span><span class="action-arrow">→</span></div>
+    <div class="action-title">寄快递</div>
+  </a>
+  {% if sf_city_available %}
+  <a class="quick-action" data-roles="employee,admin" href="/sf-city">
+    <div class="action-top"><span class="action-icon">⚡</span><span class="action-arrow">→</span></div>
+    <div class="action-title">同城急送</div>
+  </a>
+  {% endif %}
+  <a class="quick-action" data-roles="employee,admin" href="/orders">
+    <div class="action-top"><span class="action-icon">📋</span><span class="action-arrow">→</span></div>
+    <div class="action-title">我的订单</div>
+  </a>
+  <a class="quick-action" data-roles="employee,admin" href="/addresses">
+    <div class="action-top"><span class="action-icon">📇</span><span class="action-arrow">→</span></div>
+    <div class="action-title">地址簿</div>
+  </a>
+  <a class="quick-action" data-roles="employee,admin" href="/feedback">
+    <div class="action-top"><span class="action-icon">💬</span><span class="action-arrow">→</span></div>
+    <div class="action-title">意见建议</div>
+  </a>
+  <a class="quick-action" data-roles="employee,admin" href="/admin/approvals">
+    <div class="action-top"><span class="action-icon">✅</span><span class="action-arrow">→</span></div>
+    <div class="action-title">审批中心</div>
+  </a>
+  <a class="quick-action" data-roles="admin" href="/admin">
+    <div class="action-top"><span class="action-icon">🛠</span><span class="action-arrow">→</span></div>
+    <div class="action-title">管理后台</div>
+  </a>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.querySelectorAll('.date-control').forEach(control => {
+    const nativeInput = control.querySelector('.date-native');
+    const displayInput = control.querySelector('.date-display');
+    const syncDate = () => { displayInput.value = nativeInput.value || ''; };
+    nativeInput.addEventListener('input', syncDate);
+    nativeInput.addEventListener('change', syncDate);
+    syncDate();
+  });
+</script>
+{% endblock %}

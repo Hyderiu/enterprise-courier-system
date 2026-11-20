@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+{% block title %}顺丰同城急送{% endblock %}
+{% block page_class %}sf-city-order-page{% endblock %}
+{% block head %}
+<style>
+  .page.sf-city-order-page{max-width:1180px;padding-top:18px}
+  .city-head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:12px}
+  .city-head h1{margin:0;font-size:25px;color:#14213a}.city-head p{margin:4px 0 0;color:#64748b;font-size:13px}
+  .shop-strip{padding:12px 16px;margin-bottom:12px;background:#fff;border:1px solid #e5e7eb;border-radius:10px}
+  .shop-strip span{display:block;color:#64748b;font-size:11px;margin-bottom:3px}.shop-strip strong{display:block;font-size:13px;color:#1e293b;line-height:1.45}
+  .compact-form{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .form-card{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:14px 16px}.form-card.wide{grid-column:1/-1}
+  .form-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:11px;font-size:15px;font-weight:700;color:#1e293b}
+  .field-grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:10px 12px}.field{grid-column:span 6;min-width:0}.field.full{grid-column:1/-1}.field.third{grid-column:span 4}.field.quarter{grid-column:span 3}
+  .field label{display:block;margin-bottom:4px;font-size:12px;font-weight:600;color:#475569}.field label em{font-style:normal;color:#ef4444;margin-left:2px}
+  .field input,.field select,.field textarea{width:100%;box-sizing:border-box;border:1px solid #d7dde7;border-radius:7px;background:#fff;padding:8px 10px;font-size:13px;color:#172033}.field textarea{min-height:56px;resize:vertical}
+  .field input:focus,.field select:focus,.field textarea:focus{outline:3px solid rgba(37,99,235,.09);border-color:#60a5fa}
+  .field .required-missing{border-color:#ef4444!important;box-shadow:0 0 0 2px rgba(239,68,68,.10)!important;background:#fff!important}
+  .location-row{display:grid;grid-template-columns:1fr auto;gap:8px}.map-link{display:inline-flex;align-items:center;padding:0 11px;border:1px solid #cbd5e1;border-radius:7px;color:#2563eb;background:#f8fafc;text-decoration:none;font-size:12px;white-space:nowrap}
+  .field-note{margin-top:4px;color:#64748b;font-size:11px;line-height:1.4}
+  .insurance-toggle{min-height:38px;display:flex!important;align-items:center;gap:8px;margin:0!important;padding:0 12px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#0f172a!important}.insurance-toggle input{width:auto;margin:0}
+  .allocation-grid{display:grid;grid-template-columns:160px 1fr;gap:12px}
+  .quote-bar{position:sticky;bottom:10px;z-index:8;display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:16px;margin-top:12px;padding:12px 16px;background:rgba(255,255,255,.96);border:1px solid #dbe3ee;border-radius:11px;box-shadow:0 12px 32px rgba(15,23,42,.12);backdrop-filter:blur(8px)}
+  .quote-state{font-size:12px;color:#64748b}.quote-state.error{color:#b91c1c}.quote-price{text-align:right}.quote-price span{display:block;color:#64748b;font-size:11px}.quote-price strong{font-size:24px;color:#ea580c}.quote-price em{font-style:normal;font-size:12px;color:#64748b}.quote-actions{display:flex;gap:8px}.quote-actions .btn{min-width:112px}
+  .city-submit-notice{position:fixed;inset:0;z-index:1400;display:flex;align-items:center;justify-content:center;padding:20px}.city-submit-notice[hidden]{display:none}.city-submit-backdrop{position:absolute;inset:0;background:rgba(15,23,42,.48)}
+  .city-submit-dialog{position:relative;width:min(480px,calc(100vw - 32px));background:#fff;border-radius:12px;box-shadow:0 24px 70px rgba(15,23,42,.28);overflow:hidden}.city-submit-dialog h2{margin:0;padding:22px 24px 10px;font-size:19px;color:#172033}.city-submit-copy{padding:0 24px 20px;color:#475569;font-size:14px;line-height:1.75}.city-submit-copy strong{color:#b45309}.city-submit-points{margin:12px 0 0;padding:13px 16px 13px 34px;border:1px solid #fde68a;border-radius:9px;background:#fffbeb;color:#78350f}.city-submit-actions{display:flex;justify-content:flex-end;gap:10px;padding:15px 24px;border-top:1px solid #e5e7eb;background:#f8fafc}.city-submit-actions .btn{min-width:108px}
+  @media(max-width:780px){.compact-form{grid-template-columns:1fr}.form-card.wide{grid-column:auto}.shop-strip{grid-template-columns:1fr}.field,.field.third,.field.quarter{grid-column:1/-1}.allocation-grid{grid-template-columns:1fr}.quote-bar{position:static;grid-template-columns:1fr;margin-bottom:8px}.quote-state{grid-column:auto}.quote-price{text-align:left}.quote-actions{display:grid;grid-template-columns:1fr 1fr}.quote-actions .btn{min-width:0}.location-row{grid-template-columns:1fr}}
+</style>
+{% endblock %}
+{% block content %}
+<div class="city-head">
+  <div><h1>顺丰同城急送</h1><p>{{ region_label }} · 审批通过后自动呼叫骑手</p></div>
+</div>
+
+<section class="shop-strip" id="shop-strip">
+  <div><span>取件地址</span><strong id="shop-address">正在读取取件地址…</strong></div>
+</section>
+
+<form id="sf-city-form" class="compact-form">
+  <section class="form-card wide pickup-contact-card">
+    <div class="form-title"><span>寄件信息</span></div>
+    <div class="field-grid">
+      <div class="field"><label>寄件人<em>*</em></label><input name="sender_name" required maxlength="50" placeholder="填写寄件人姓名"></div>
+      <div class="field"><label>联系电话<em>*</em></label><input name="sender_phone" required inputmode="tel" maxlength="24" placeholder="填写寄件人联系电话"></div>
+    </div>
+  </section>
+
+  <section class="form-card">
+    <div class="form-title"><span>收件人信息</span></div>
+    <div class="field-grid">
+      <div class="field"><label>收件人<em>*</em></label><input name="receiver_name" required maxlength="50" placeholder="姓名"></div>
+      <div class="field"><label>联系电话<em>*</em></label><input name="receiver_phone" required inputmode="tel" maxlength="24" placeholder="填写可联系的号码"></div>
+      <div class="field"><label>收件单位</label><input name="receiver_company" maxlength="100" placeholder="选填"></div>
+      <div class="field"><label>区/县<em>*</em></label><select name="receiver_district" required>{% for district in receiver_districts %}<option value="{{ district }}">{{ district }}</option>{% endfor %}</select></div>
+      <div class="field full"><label>详细地址<em>*</em></label><input name="receiver_address" required maxlength="255" placeholder="街道、园区、楼栋和门牌号"></div>
+      <div class="field full"><label>收件定位<em>*</em></label><div class="location-row"><input id="receiver-location" required placeholder="经度,纬度"><a class="map-link" href="https://lbs.amap.com/tools/picker" target="_blank" rel="noopener">地图取坐标</a></div></div>
+    </div>
+  </section>
+
+  <section class="form-card">
+    <div class="form-title"><span>物品信息</span></div>
+    <div class="field-grid">
+      <div class="field"><label>物品类别<em>*</em></label><select id="product-type" name="product_type" required>{% for item in sf_city_product_types %}<option value="{{ item.value }}">{{ item.label }}</option>{% endfor %}</select></div>
+      <div class="field"><label>物品名称<em>*</em></label><input name="item_name" required maxlength="64" value="文件" placeholder="如：合同文件"></div>
+      <div class="field quarter"><label>预估重量（kg）<em>*</em></label><input name="item_weight" type="number" min="0.1" step="0.1" value="1" required></div>
+      <div class="field quarter"><label>数量<em>*</em></label><input name="item_count" type="number" min="1" step="1" value="1" required></div>
+      <div class="field quarter"><label>保价</label><label class="insurance-toggle"><input id="insurance-enabled" type="checkbox">需要保价</label></div>
+      <div class="field quarter" id="insurance-value-field" hidden><label>声明价值（元）<em>*</em></label><input id="insurance-amount" name="insurance_amount" type="number" min="0.01" step="0.01" placeholder="填写保价金额" disabled></div>
+      <div class="field full"><label>寄件原因<em>*</em></label><textarea name="shipping_reason" required maxlength="300" placeholder="说明本次同城急送用途"></textarea></div>
+      <div class="field full"><label>订单备注 <span class="muted">传给顺丰骑手</span></label><input name="item_remark" maxlength="256" placeholder="交接要求、楼层或其他说明（选填）"></div>
+    </div>
+  </section>
+
+  <section class="form-card wide">
+    <div class="form-title"><span>费用归属</span></div>
+    <div class="allocation-grid">
+      <div class="field"><label>归属方式<em>*</em></label><select id="cost-type" name="cost_type"><option value="department">部门费用</option><option value="project">项目费用</option></select></div>
+      <div class="field" id="dept-field"><label>归属部门<em>*</em></label><select id="dept-select" required data-searchable data-placeholder="输入部门名称"><option value="">正在加载部门…</option></select></div>
+      <div class="field" id="project-field" hidden><label>归属项目<em>*</em></label><select id="project-select" data-searchable data-placeholder="输入项目名称"><option value="">正在加载项目…</option></select></div>
+    </div>
+  </section>
+</form>
+
+<div class="quote-bar">
+  <div id="quote-state" class="quote-state">填写收件地址、定位和物品信息后获取实时报价。</div>
+  <div class="quote-price"><span>预估费用 / 时效</span><strong id="quote-price">--</strong><em> 元</em><div id="quote-eta" class="field-note">--</div></div>
+  <div class="quote-actions"><button type="button" class="btn btn-secondary" id="quote-btn">获取报价</button><button type="button" class="btn btn-primary" id="submit-btn">提交审批</button></div>
+</div>
+
+<div id="city-submit-notice" class="city-submit-notice" hidden role="dialog" aria-modal="true" aria-labelledby="city-submit-title">
+  <div class="city-submit-backdrop" data-close-submit-notice></div>
+  <section class="city-submit-dialog">
+    <h2 id="city-submit-title">提交前请确认</h2>
+    <div class="city-submit-copy">
+      {% if region_code == 'xiamen_other' %}目前顺丰同城仅支持从公司<strong>三楼指定取件点</strong>寄出，请提前将物品带至三楼。{% else %}北京顺丰同城从公司<strong>{{ pickup_notice }}</strong>取件，请提前将物品送至该取件点。{% endif %}
+      <ul class="city-submit-points">
+        <li>顺丰同城不提供现场包装服务，请在提交前自行妥善封装。</li>
+        <li>请确认封装牢固、寄件信息准确，便于骑士到场后直接取件。</li>
+      </ul>
+    </div>
+    <div class="city-submit-actions"><button type="button" class="btn btn-secondary" data-close-submit-notice>返回检查</button><button type="button" class="btn btn-primary" id="confirm-city-submit">确认并提交</button></div>
+  </section>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const form=document.getElementById('sf-city-form');
+const $=id=>document.getElementById(id);
+let quotedSignature='';
+let pendingSubmitData=null;
+let departments=[];
+let projects=[];
+const sfCityRegion={{ region_code|tojson }};
+const receiverProvince={{ receiver_province|tojson }};
+const receiverCity={{ receiver_city|tojson }};
+const sfCityApiSuffix='?region='+encodeURIComponent(sfCityRegion);
+
+function jsonError(response,data,fallback){return (data&&data.detail)||fallback||('请求失败（'+response.status+'）');}
+async function requestJson(url,options={}){const response=await fetch(url,options);let data={};try{data=await response.json();}catch(_e){}if(!response.ok)throw new Error(jsonError(response,data));return data;}
+function parseLocation(){const raw=$('receiver-location').value.trim().replace(/，/g,',');const match=raw.match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/);if(!match)throw new Error('请按“经度,纬度”格式粘贴地图坐标');return {receiver_lng:match[1],receiver_lat:match[2]};}
+function selectedOption(select){return select.options[select.selectedIndex]||null;}
+function payload(includeOrder=false){
+  const data=Object.fromEntries(new FormData(form).entries());
+  Object.assign(data,parseLocation(),{receiver_province:receiverProvince,receiver_city:receiverCity});
+  data.item_weight=Number(data.item_weight);data.item_value=0.01;data.item_count=Number(data.item_count);data.product_type=Number(data.product_type);data.insurance_amount=$('insurance-enabled').checked?Number($('insurance-amount').value):0;
+  if(includeOrder){
+    const dept=selectedOption($('dept-select'));const project=selectedOption($('project-select'));
+    data.dept_code=dept?.value||'';data.dept_name=dept?.dataset.name||'';
+    data.project_code=data.cost_type==='project'?(project?.value||''):'';data.project_name=data.cost_type==='project'?(project?.dataset.name||''):'';
+  }
+  return data;
+}
+function quoteSignature(data){return JSON.stringify([data.receiver_address,data.receiver_lng,data.receiver_lat,data.item_weight,data.product_type,data.insurance_amount]);}
+function setState(message,error=false){$('quote-state').textContent=message;$('quote-state').classList.toggle('error',error);}
+function updateRequiredStyles(){
+  const missing=[];
+  form.querySelectorAll('[required]:not(select[data-searchable])').forEach(control=>{if(control.disabled||control.closest('[hidden]'))return;const invalid=!control.checkValidity();control.classList.toggle('required-missing',invalid);if(invalid)missing.push(control);});
+  form.querySelectorAll('select[data-searchable]').forEach(select=>{if(select.disabled||select.closest('[hidden]'))return;const input=select.closest('.search-select')?.querySelector('.search-select-input');const required=select.id==='project-select'?$('cost-type').value==='project':Boolean(select.required||input?.required);const invalid=required&&!select.value;if(input)input.classList.toggle('required-missing',invalid);if(invalid)missing.push(input||select);});
+  return missing;
+}
+function validateRequired(){const missing=updateRequiredStyles();if(!form.reportValidity()||missing.length){setState('请先填写红框标注的必填信息。',true);missing[0]?.focus?.();return false;}return true;}
+function openSubmitNotice(data){pendingSubmitData=data;$('city-submit-notice').hidden=false;$('confirm-city-submit').focus();}
+function closeSubmitNotice(){pendingSubmitData=null;$('city-submit-notice').hidden=true;}
+async function performSubmit(data){const button=$('submit-btn');const confirmButton=$('confirm-city-submit');button.disabled=true;confirmButton.disabled=true;confirmButton.textContent='提交中…';try{const result=await requestJson('/api/sf-city/orders'+sfCityApiSuffix,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});$('city-submit-notice').hidden=true;setState(`申请 ${result.order_no} 已提交，等待审批。`);setTimeout(()=>location.href='/orders',900);}catch(error){$('city-submit-notice').hidden=true;setState(error.message,true);button.disabled=false;}finally{confirmButton.disabled=false;confirmButton.textContent='确认并提交';pendingSubmitData=null;}}
+async function loadShop(){try{const data=await requestJson('/api/sf-city/shop'+sfCityApiSuffix);$('shop-address').textContent=data.shop.address||'取件地址未配置';}catch(error){$('shop-address').textContent=error.message;setState(error.message,true);}}
+async function loadAllocation(){
+  try{
+    const [deptData,projectData]=await Promise.all([requestJson('/api/departments'),requestJson('/api/projects?sort=recent')]);departments=deptData.items||[];projects=projectData.items||[];
+    $('dept-select').innerHTML='<option value="">请选择部门</option>'+departments.map(d=>`<option value="${escapeHtml(d.dept_code)}" data-name="${escapeHtml(d.dept_name)}">${escapeHtml(d.dept_name)}</option>`).join('');
+    $('project-select').innerHTML='<option value="">请选择项目</option>'+projects.map(p=>`<option value="${escapeHtml(p.project_code)}" data-name="${escapeHtml(p.project_name)}" data-dept-code="${escapeHtml(p.dept_code||'')}" data-dept-name="${escapeHtml(p.dept_name||'')}">${escapeHtml(p.project_name)}</option>`).join('');
+    const current={{ current_user_department|tojson }};if(current){const option=[...$('dept-select').options].find(o=>o.dataset.name===current||o.textContent===current);if(option)$('dept-select').value=option.value;}window.refreshSearchableSelect?.($('dept-select'));window.refreshSearchableSelect?.($('project-select'));updateRequiredStyles();
+  }catch(error){setState('费用归属加载失败：'+error.message,true);}
+}
+function escapeHtml(value){return String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+$('cost-type').addEventListener('change',()=>{const project=$('cost-type').value==='project';$('project-field').hidden=!project;$('dept-select').required=true;$('project-select').required=project;if(project){$('dept-select').value='';$('project-select').value='';window.refreshSearchableSelect?.($('dept-select'));window.refreshSearchableSelect?.($('project-select'));}updateRequiredStyles();});
+$('project-select').addEventListener('change',()=>{const option=selectedOption($('project-select'));$('dept-select').value=option?.dataset.deptCode||'';window.refreshSearchableSelect?.($('dept-select'));});
+const quoteFields=new Set(['receiver_address','receiver_district','item_weight','product_type','insurance_amount']);
+function syncInsurance(){const enabled=$('insurance-enabled').checked;const field=$('insurance-value-field');const input=$('insurance-amount');field.hidden=!enabled;input.disabled=!enabled;input.required=enabled;if(!enabled)input.value='';quotedSignature='';$('quote-price').textContent='--';$('quote-eta').textContent='--';}
+$('insurance-enabled').addEventListener('change',syncInsurance);
+syncInsurance();
+form.addEventListener('input',updateRequiredStyles);form.addEventListener('change',updateRequiredStyles);
+form.addEventListener('input',event=>{if(!quoteFields.has(event.target.name)&&event.target.id!=='receiver-location')return;quotedSignature='';$('quote-price').textContent='--';$('quote-eta').textContent='--';});
+$('quote-btn').addEventListener('click',async()=>{if(!validateRequired())return;let data;try{data=payload(false);}catch(error){return setState(error.message,true);}const button=$('quote-btn');button.disabled=true;button.textContent='查询中…';try{const result=await requestJson('/api/sf-city/quote'+sfCityApiSuffix,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});$('quote-price').textContent=Number(result.estimated_fee||0).toFixed(2);$('quote-eta').textContent=result.promise_delivery_minutes?`预计 ${result.promise_delivery_minutes} 分钟送达`:'时效以顺丰返回为准';quotedSignature=quoteSignature(data);setState('报价有效；提交时系统会再次校验。');}catch(error){setState(error.message,true);}finally{button.disabled=false;button.textContent='获取报价';}});
+$('submit-btn').addEventListener('click',()=>{if(!validateRequired())return;let data;try{data=payload(true);}catch(error){return setState(error.message,true);}if(quotedSignature!==quoteSignature(data)){setState('信息已变化，请先重新获取报价。',true);return;}openSubmitNotice(data);});
+$('confirm-city-submit').addEventListener('click',()=>{if(pendingSubmitData)performSubmit(pendingSubmitData);});document.querySelectorAll('[data-close-submit-notice]').forEach(button=>button.addEventListener('click',closeSubmitNotice));document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!$('city-submit-notice').hidden)closeSubmitNotice();});
+loadShop();loadAllocation();setTimeout(updateRequiredStyles,0);
+</script>
+{% endblock %}

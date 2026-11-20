@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}意见建议{% endblock %}
+{% block page_class %}page-wide{% endblock %}
+{% block head %}
+<style>
+.feedback-layout{display:grid;grid-template-columns:minmax(320px,.8fr) minmax(480px,1.2fr);gap:20px}.feedback-card{background:#fff;border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);padding:24px}.feedback-card h2{font-size:19px;margin-bottom:6px}.feedback-help{color:var(--muted);font-size:13px;line-height:1.7}.feedback-form textarea{width:100%;min-height:180px;margin-top:18px;padding:14px;border:1px solid #d9e0e8;border-radius:10px;resize:vertical;font:inherit;line-height:1.6}.feedback-form textarea:focus{outline:none;border-color:#5b72ee;box-shadow:0 0 0 3px rgba(91,114,238,.12)}.feedback-form-foot{display:flex;align-items:center;justify-content:space-between;margin-top:12px}.feedback-count{color:#94a3b8;font-size:12px}.feedback-list{display:grid;gap:12px;margin-top:18px}.feedback-item{padding:16px;border:1px solid #e8edf3;border-radius:12px;background:#fbfcfe}.feedback-item-top{display:flex;align-items:center;justify-content:space-between;gap:12px}.feedback-time{color:#94a3b8;font-size:12px}.feedback-content{margin-top:10px;line-height:1.7;white-space:pre-wrap;word-break:break-word}.feedback-status{display:inline-flex;padding:4px 10px;border-radius:999px;font-size:12px}.feedback-status.pending{background:#fff4d6;color:#936000}.feedback-status.resolved{background:#dcfce7;color:#166534}.feedback-empty{padding:50px 12px;text-align:center;color:#94a3b8}
+@media(max-width:860px){.feedback-layout{grid-template-columns:1fr}}
+</style>
+{% endblock %}
+{% block content %}
+<div class="page-hero" style="margin-bottom:22px"><h1>💬 意见建议</h1></div>
+<div class="feedback-layout">
+  <section class="feedback-card">
+    <h2>提交新意见</h2>
+    <form id="feedback-form" class="feedback-form">
+      <textarea id="feedback-content" maxlength="1000" placeholder="请输入意见或建议…" required></textarea>
+      <div class="feedback-form-foot"><span id="feedback-count" class="feedback-count">0 / 1000</span><button class="btn btn-primary" type="submit">提交意见</button></div>
+    </form>
+  </section>
+  <section class="feedback-card">
+    <h2>我的意见</h2>
+    <div class="feedback-list">
+      {% for item in feedback_items %}
+      <article class="feedback-item">
+        <div class="feedback-item-top"><span class="feedback-status {{ item.status }}">{{ '已处理' if item.status == 'resolved' else '待处理' }}</span><time class="feedback-time">{{ item.created_at.strftime('%Y-%m-%d %H:%M') if item.created_at else '—' }}</time></div>
+        <div class="feedback-content">{{ item.content }}</div>
+      </article>
+      {% else %}
+      <div class="feedback-empty">还没有提交过意见</div>
+      {% endfor %}
+    </div>
+  </section>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const currentFeedbackUserId={{ current_user_id if current_user_id else 'null' }};
+const feedbackContent=document.getElementById('feedback-content');
+const feedbackCount=document.getElementById('feedback-count');
+feedbackContent.addEventListener('input',()=>feedbackCount.textContent=feedbackContent.value.length+' / 1000');
+if(!currentFeedbackUserId){
+  fetch('/api/auth/mock-user').then(response=>response.json()).then(data=>{
+    if(data.ok&&data.user?.id) location.replace('/feedback?user_id='+data.user.id);
+  }).catch(()=>{});
+}
+document.getElementById('feedback-form').addEventListener('submit',async event=>{
+  event.preventDefault();
+  if(!currentFeedbackUserId){alert('正在获取当前用户，请稍后再试');return;}
+  const content=feedbackContent.value.trim();
+  if(!content){alert('请填写意见内容');return;}
+  const button=event.currentTarget.querySelector('button[type="submit"]');
+  button.disabled=true;button.textContent='提交中…';
+  try{
+    const response=await fetch('/api/feedback',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:currentFeedbackUserId,content})});
+    const data=await response.json();
+    if(!response.ok||!data.ok)throw new Error(data.detail||'提交失败');
+    location.reload();
+  }catch(error){alert(error.message||'提交失败');button.disabled=false;button.textContent='提交意见';}
+});
+</script>
+{% endblock %}

@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>钉钉免登 - 企业快递系统</title>
+  <style>
+    *{box-sizing:border-box}body{margin:0;background:#f5f7fb;color:#14213d;font-family:"Microsoft YaHei",sans-serif}
+    .wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}.card{width:min(440px,100%);background:#fff;border-radius:20px;padding:38px 28px;box-shadow:0 14px 50px rgba(20,33,61,.1);text-align:center}
+    .icon{font-size:54px}.title{font-size:24px;font-weight:700;margin:18px 0 8px}.desc{color:#64748b;line-height:1.7}.status{margin-top:24px;padding:14px;border-radius:10px;background:#eff6ff;color:#2563eb;line-height:1.6;word-break:break-word}.status.error{background:#fff1f2;color:#dc2626}.retry{display:none;margin:20px auto 0;border:0;border-radius:9px;padding:11px 24px;background:#1677ff;color:#fff;font-size:15px}
+  </style>
+</head>
+<body>
+<div class="wrap"><div class="card">
+  <div class="icon">📦</div><div class="title">企业快递系统</div>
+  <div class="desc">正在通过钉钉验证员工身份，请稍候。</div>
+  <div id="status" class="status">正在加载钉钉组件…</div>
+  <button id="retry" class="retry" type="button">重新登录</button>
+</div></div>
+<script src="/static/vendor/dingtalk-jsapi-3.2.9.min.js"></script>
+<script>
+(function () {
+  const clientId = {{ client_id|tojson }};
+  const corpId = {{ corp_id|tojson }};
+  const next = {{ next|tojson }};
+  const status = document.getElementById('status');
+  const retry = document.getElementById('retry');
+  let completed = false;
+  let readyTimer = null;
+
+  function show(message, error) {
+    status.textContent = message;
+    status.classList.toggle('error', !!error);
+    retry.style.display = error ? 'block' : 'none';
+  }
+
+  function errorText(value) {
+    if (!value) return '未知错误';
+    return value.errorMessage || value.message || value.errMsg || JSON.stringify(value);
+  }
+
+  async function exchange(code) {
+    if (completed) return;
+    if (!code) {
+      show('钉钉没有返回授权码，请更新钉钉客户端后重试。', true);
+      return;
+    }
+    completed = true;
+    show('已获得授权，正在读取员工信息…');
+    try {
+      const response = await fetch('/api/auth/dingtalk', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        credentials: 'same-origin',
+        body: JSON.stringify({auth_code: code, next: next})
+      });
+      const data = await response.json().catch(function () { return {}; });
+      if (!response.ok) throw new Error(data.detail || '服务器登录失败');
+      show('登录成功，正在进入系统…');
+      location.replace(data.redirect || '/');
+    } catch (error) {
+      completed = false;
+      show(error.message || '服务器登录失败', true);
+    }
+  }
+
+  function finishAuthorization(response) {
+    exchange(response && (response.code || response.authCode));
+  }
+
+  function requestModernCode() {
+    show('钉钉环境已连接，正在获取员工授权…');
+    try {
+      const result = window.CourierDingTalk.requestAuthCode({
+        clientId: clientId,
+        corpId: corpId,
+        success: finishAuthorization,
+        fail: function (error) { show('钉钉授权失败：' + errorText(error), true); }
+      });
+      if (result && typeof result.then === 'function') {
+        result.then(finishAuthorization)
+          .catch(function (error) { show('钉钉授权失败：' + errorText(error), true); });
+      }
+    } catch (error) {
+      show('钉钉授权启动失败：' + errorText(error), true);
+    }
+  }
+
+  function requestLegacyCode() {
+    const legacy = window.dd && dd.runtime && dd.runtime.permission
+      && dd.runtime.permission.requestAuthCode;
+    if (typeof legacy !== 'function') {
+      show('钉钉免登组件不可用，请关闭页面后从工作台重新进入。', true);
+      return;
+    }
+    const invoke = function () {
+      clearTimeout(readyTimer);
+      show('正在使用兼容模式获取员工授权…');
+      legacy({
+        corpId: corpId,
+        onSuccess: finishAuthorization,
+        onFail: function (error) { show('钉钉授权失败：' + errorText(error), true); }
+      });
+    };
+    if (typeof dd.ready !== 'function') {
+      invoke();
+      return;
+    }
+    dd.ready(invoke);
+    readyTimer = setTimeout(function () {
+      show('旧版钉钉兼容模式连接超时，请升级钉钉客户端。', true);
+    }, 8000);
+  }
+
+  function authorize() {
+    completed = false;
+    clearTimeout(readyTimer);
+    if (!corpId) {
+      show('未获得企业 CorpId，请从钉钉工作台应用入口打开。', true);
+      return;
+    }
+    if (window.CourierDingTalk && typeof window.CourierDingTalk.requestAuthCode === 'function') {
+      requestModernCode();
+      return;
+    }
+    requestLegacyCode();
+  }
+
+  retry.addEventListener('click', function () {
+    retry.style.display = 'none';
+    authorize();
+  });
+  authorize();
+})();
+</script>
+</body>
+</html>
