@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Express{% endblock %} - 企业快递系统</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/static/css/app.css?v=20261110a">
+{% block head %}{% endblock %}
+</head>
+<body>
+
+<nav class="topbar">
+  <div class="topbar-logo">📦 企业快递 <span class="app-version">v{{ app_version }}</span></div>
+  <div class="topbar-nav">
+    <a data-roles="employee,admin" href="/" class="{% if request.url.path == '/' %}active{% endif %}">🏠 首页</a>
+    <a data-roles="employee,admin" href="/express" class="{% if '/express' in request.url.path %}active{% endif %}">✍️ 寄快递</a>
+    <a data-roles="employee,admin" href="/orders" class="{% if '/orders' in request.url.path %}active{% endif %}">📋 我的订单</a>
+    <a data-roles="employee" href="/waybill-records" class="{% if request.url.path == '/waybill-records' %}active{% endif %}">🧾 运单补充记录</a>
+    <a data-roles="employee,admin" href="/addresses" class="{% if '/addresses' in request.url.path %}active{% endif %}">📇 地址簿</a>
+    <a data-roles="employee,admin" href="/feedback" class="{% if request.url.path == '/feedback' %}active{% endif %}">💬 意见建议</a>
+    <a data-roles="employee,admin" href="/admin/approvals" class="{% if request.url.path == '/admin/approvals' %}active{% endif %}">✅ 审批中心</a>
+    <a data-roles="admin" href="/admin" class="{% if request.url.path == '/admin' or ('/admin/' in request.url.path and request.url.path != '/admin/approvals') %}active{% endif %}">🛠 管理后台</a>
+  </div>
+  <div class="topbar-right">
+    {% if (request.state.auth_enabled or request.state.local_identity|default(false)) and request.state.current_user %}
+    <span class="login-user" title="{{ request.state.current_user.department }}">{{ request.state.current_user.name }}{% if request.state.current_user.department %} · {{ request.state.current_user.department }}{% endif %}</span>
+    {% if request.state.auth_enabled %}
+    <button id="dingtalk-logout" type="button" class="btn btn-ghost">退出</button>
+    {% endif %}
+    {% else %}
+    <label class="role-switch"><span>当前视角</span><select id="role-view" aria-label="切换角色视角"><option value="employee">员工</option><option value="admin">管理员</option></select></label>
+    {% endif %}
+  </div>
+</nav>
+
+{% if request.state.auth_enabled and request.state.current_user and request.state.current_user.role == 'employee' %}
+<div id="admin-bootstrap-banner" hidden style="max-width:1180px;margin:14px auto 0;padding:13px 16px;border:1px solid #bfdbfe;border-radius:12px;background:#eff6ff;color:#1e3a8a;display:flex;align-items:center;justify-content:space-between;gap:16px">
+  <span><b>首次管理员尚未设置</b>　确认后可将当前钉钉账号设为管理员（不包含审核权限）。</span>
+  <button id="claim-admin" type="button" class="btn btn-primary" style="white-space:nowrap">将当前账号设为管理员</button>
+</div>
+{% endif %}
+
+<main class="page {% block page_class %}{% endblock %}">
+{% block content %}{% endblock %}
+</main>
+
+<script>
+(function () {
+  const selector = document.getElementById('role-view');
+  const authenticatedRole = {{ (request.state.current_user.role if request.state.current_user else '')|tojson }};
+  const landing = {employee: '/', admin: '/'};
+  const stored = localStorage.getItem('courier_role_view');
+  const role = authenticatedRole === 'admin' ? 'admin' : ((!authenticatedRole && stored === 'admin') ? 'admin' : 'employee');
+  function applyRole(value) {
+    document.documentElement.dataset.roleView = value;
+    document.querySelectorAll('[data-roles]').forEach(function (item) {
+      item.hidden = !item.dataset.roles.split(',').includes(value);
+    });
+    if (selector) selector.value = value;
+    window.dispatchEvent(new CustomEvent('courier-role-change', {detail: {role: value}}));
+  }
+  applyRole(role);
+  if (selector) selector.addEventListener('change', function () {
+      localStorage.setItem('courier_role_view', selector.value);
+      applyRole(selector.value);
+      location.href = landing[selector.value];
+    });
+  const logout = document.getElementById('dingtalk-logout');
+  if (logout) logout.addEventListener('click', async function () {
+    await fetch('/api/auth/logout', {method: 'POST', credentials: 'same-origin'});
+    location.replace('/dingtalk-entry');
+  });
+  const bootstrapBanner = document.getElementById('admin-bootstrap-banner');
+  const claimAdmin = document.getElementById('claim-admin');
+  if (bootstrapBanner && claimAdmin) {
+    fetch('/api/auth/bootstrap-admin/status', {credentials: 'same-origin'})
+      .then(response => response.ok ? response.json() : {available: false})
+      .then(data => { bootstrapBanner.hidden = !data.available; })
+      .catch(() => { bootstrapBanner.hidden = true; });
+    claimAdmin.addEventListener('click', async function () {
+      claimAdmin.disabled = true;
+      claimAdmin.textContent = '正在设置…';
+      try {
+        const response = await fetch('/api/auth/bootstrap-admin', {
+          method: 'POST', credentials: 'same-origin',
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.detail || '设置失败');
+        location.reload();
+      } catch (error) {
+        alert(error.message);
+        claimAdmin.disabled = false;
+        claimAdmin.textContent = '将当前账号设为管理员';
+      }
+    });
+  }
+})();
+</script>
+<script src="/static/js/search-select.js?v=20261112a"></script>
+
+{% block scripts %}{% endblock %}
+</body>
+</html>

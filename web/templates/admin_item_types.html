@@ -1,0 +1,202 @@
+{% extends 'base.html' %}
+{% block title %}物品类型及默认快递推荐设置{% endblock %}
+{% block page_class %}admin-workspace{% endblock %}
+{% block content %}
+<div class="page-hero">
+  <h1>物品类型及默认快递推荐设置</h1>
+  <p>管理下单可选的物品类型和各地区默认推荐的快递产品</p>
+</div>
+
+<div style="margin-bottom:16px">
+  <a href="/admin" class="btn btn-ghost btn-sm">← 返回控制台</a>
+</div>
+
+<div class="card item-type-card">
+  <div class="item-type-heading">
+    <div class="card-title" style="margin:0">物品类型</div>
+    <button type="button" class="add-type-button" onclick="showAddInput()">⊕ 新增</button>
+  </div>
+
+  <div id="add-type-row" class="add-type-row" hidden>
+    <input id="new-item-type" maxlength="20" placeholder="输入新的物品类型"
+           onkeydown="if(event.key === 'Enter'){ event.preventDefault(); addItemType(); }">
+    <button type="button" class="btn btn-primary" onclick="addItemType()">添加</button>
+    <button type="button" class="btn btn-ghost" onclick="hideAddInput()">取消</button>
+  </div>
+
+  <div class="item-type-box">
+    <div id="item-type-tags" class="item-type-tags"></div>
+    <div id="item-type-count" class="item-type-count"></div>
+  </div>
+  <div id="save-state" class="save-state"></div>
+</div>
+
+<div class="card default-service-card">
+  <div class="default-service-heading">
+    <div>
+      <div class="card-title">各地区默认推荐</div>
+      <div class="section-note">下单时自动选中默认产品，员工仍可自行切换。</div>
+    </div>
+  </div>
+  <div class="region-service-list">
+    {% for region in service_settings %}
+    <section class="region-service-row" data-region="{{ region.region_code }}">
+      <div class="region-service-name">{{ region.region_label }}</div>
+      <div class="region-service-options">
+        {% if region.services %}
+          {% for service in region.services %}
+          <label class="service-choice{% if service.id == region.default_service_id %} selected{% endif %}">
+            <input type="radio" name="default-{{ region.region_code }}" value="{{ service.id }}"
+                   {% if service.id == region.default_service_id %}checked{% endif %}
+                   onchange="saveDefaultService('{{ region.region_code }}', '{{ service.id }}', this)">
+            <span>{{ service.label }}</span>
+            <small>默认</small>
+          </label>
+          {% endfor %}
+        {% else %}
+          <span class="no-services">该地区尚未启用快递产品</span>
+        {% endif %}
+      </div>
+      <div class="region-save-state" id="default-state-{{ region.region_code }}"></div>
+    </section>
+    {% endfor %}
+  </div>
+</div>
+
+<style>
+.item-type-card { max-width:900px }
+.item-type-heading { display:flex; align-items:center; justify-content:space-between; margin-bottom:18px }
+.add-type-button { border:0; background:transparent; color:#1677ff; font-size:16px; cursor:pointer; padding:8px }
+.add-type-row { display:flex; gap:10px; margin-bottom:16px }
+.add-type-row[hidden] { display:none }
+.add-type-row input { flex:1; max-width:360px }
+.item-type-box { min-height:132px; border:1px solid #94a3b8; border-radius:6px; padding:14px 16px 36px; position:relative }
+.item-type-tags { display:flex; flex-wrap:wrap; gap:10px }
+.item-type-tag { display:inline-flex; align-items:center; gap:9px; padding:7px 11px; background:#f8fafc; border:1px solid #d7dce2; border-radius:3px; color:#334155 }
+.item-type-tag button { border:0; background:transparent; padding:0; color:#475569; font-size:20px; line-height:16px; cursor:pointer }
+.item-type-count { position:absolute; right:14px; bottom:10px; color:#475569 }
+.save-state { min-height:22px; margin-top:10px; color:#64748b; font-size:13px }
+.item-type-card { width:100%; max-width:none; box-sizing:border-box }
+.default-service-card { width:100%; margin-top:16px; padding:22px 26px; box-sizing:border-box }
+.default-service-heading { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px }
+.default-service-heading .card-title { margin:0 0 3px }
+.section-note { color:#64748b; font-size:13px }
+.region-service-list { border:1px solid #e2e8f0; border-radius:10px; overflow:hidden }
+.region-service-row { display:grid; grid-template-columns:105px minmax(0,1fr) 76px; gap:14px; align-items:center; min-height:66px; padding:10px 14px; background:#fff }
+.region-service-row + .region-service-row { border-top:1px solid #edf1f5 }
+.region-service-name { font-weight:700; color:#172b4d; white-space:nowrap }
+.region-service-options { display:flex; flex-wrap:wrap; gap:8px; min-width:0 }
+.service-choice { display:inline-flex; align-items:center; gap:7px; min-height:36px; padding:6px 11px; border:1px solid #d7dee8; border-radius:8px; background:#fff; color:#334155; cursor:pointer; transition:.15s ease }
+.service-choice:hover { border-color:#94b8ff; background:#f8fbff }
+.service-choice.selected { border-color:#4f80ff; background:#eef4ff; color:#174ea6; box-shadow:0 0 0 1px rgba(79,128,255,.08) }
+.service-choice input { width:15px; height:15px; margin:0; accent-color:#2563eb }
+.service-choice small { display:none; padding:1px 6px; border-radius:999px; background:#dff7e8; color:#087a3e; font-size:11px }
+.service-choice.selected small { display:inline-block }
+.region-save-state { min-height:18px; color:#087a3e; font-size:12px; text-align:right; white-space:nowrap }
+.no-services { color:#94a3b8; font-size:13px }
+@media (max-width:900px) {
+  .region-service-row { grid-template-columns:82px minmax(0,1fr) }
+  .region-save-state { grid-column:2; text-align:left }
+}
+</style>
+
+<script>
+let itemTypes = {{ item_types | tojson }};
+
+function renderItemTypes() {
+  const container = document.getElementById('item-type-tags');
+  container.innerHTML = '';
+  itemTypes.forEach((value, index) => {
+    const tag = document.createElement('span');
+    tag.className = 'item-type-tag';
+    const label = document.createElement('span');
+    label.textContent = value;
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.setAttribute('aria-label', '删除' + value);
+    remove.textContent = '×';
+    remove.onclick = () => removeItemType(index);
+    tag.append(label, remove);
+    container.appendChild(tag);
+  });
+  document.getElementById('item-type-count').textContent = itemTypes.length + '/15';
+}
+
+function showAddInput() {
+  if (itemTypes.length >= 15) { alert('物品类型最多15项'); return; }
+  document.getElementById('add-type-row').hidden = false;
+  document.getElementById('new-item-type').focus();
+}
+
+function hideAddInput() {
+  document.getElementById('add-type-row').hidden = true;
+  document.getElementById('new-item-type').value = '';
+}
+
+async function addItemType() {
+  const input = document.getElementById('new-item-type');
+  const value = input.value.trim();
+  if (!value) { alert('请输入物品类型'); return; }
+  if (itemTypes.includes(value)) { alert('这个物品类型已经存在'); return; }
+  if (itemTypes.length >= 15) { alert('物品类型最多15项'); return; }
+  const previous = [...itemTypes];
+  itemTypes.push(value);
+  renderItemTypes();
+  if (await saveItemTypes()) hideAddInput();
+  else { itemTypes = previous; renderItemTypes(); }
+}
+
+async function removeItemType(index) {
+  if (itemTypes.length <= 1) { alert('至少保留一个物品类型'); return; }
+  const previous = [...itemTypes];
+  itemTypes.splice(index, 1);
+  renderItemTypes();
+  if (!(await saveItemTypes())) { itemTypes = previous; renderItemTypes(); }
+}
+
+async function saveItemTypes() {
+  const state = document.getElementById('save-state');
+  state.textContent = '正在保存...';
+  try {
+    const response = await fetch('/api/admin/item-types', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({item_types: itemTypes})
+    });
+    const result = await response.json();
+    if (!response.ok || !result.ok) throw new Error(result.detail || '保存失败');
+    itemTypes = result.item_types;
+    state.textContent = '已保存，下单页面刷新后生效';
+    return true;
+  } catch (error) {
+    state.textContent = '保存失败：' + error.message;
+    return false;
+  }
+}
+
+async function saveDefaultService(regionCode, serviceId, input) {
+  const row = input.closest('.region-service-row');
+  const state = document.getElementById('default-state-' + regionCode);
+  const choices = [...row.querySelectorAll('.service-choice')];
+  state.textContent = '保存中…';
+  choices.forEach(choice => choice.classList.toggle('selected', choice.contains(input)));
+  try {
+    const response = await fetch('/api/admin/default-service', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({region_code: regionCode, service_id: serviceId})
+    });
+    const result = await response.json();
+    if (!response.ok || !result.ok) throw new Error(result.detail || '保存失败');
+    state.textContent = '已保存';
+    setTimeout(() => { if (state.textContent === '已保存') state.textContent = ''; }, 1800);
+  } catch (error) {
+    state.textContent = '保存失败';
+    alert(error.message);
+    location.reload();
+  }
+}
+
+renderItemTypes();
+</script>
+{% endblock %}

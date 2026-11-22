@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block title %}地址簿{% endblock %}
+{% block page_class %}page-wide{% endblock %}
+
+{% block head %}
+<style>
+  .address-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:20px; margin-bottom:22px; }
+  .address-heading h1 { font-size:26px; margin-bottom:5px; }
+  .address-heading p { color:var(--muted); }
+  .personal-badge { padding:9px 13px; border-radius:999px; background:#eef5ff; color:#175cd3; font-size:13px; font-weight:600; }
+  .address-panel { background:#fff; border:1px solid #e8ebf0; border-radius:12px; overflow:hidden; }
+  .address-toolbar { min-height:72px; padding:14px 22px; border-bottom:1px solid #e8ebf0; display:flex; align-items:center; justify-content:space-between; gap:18px; flex-wrap:wrap; }
+  .address-toolbar-actions { display:flex; align-items:center; gap:10px; flex:1; justify-content:flex-end; }
+  .address-search { width:min(360px,100%); height:42px; border:1px solid #dce3ec; border-radius:8px; padding:0 12px; font:inherit; }
+  .address-form { margin:20px 22px 0; padding:20px; border:1px solid #dce3ec; border-radius:10px; background:#fbfcfe; }
+  .address-form-title { display:flex; align-items:center; justify-content:space-between; margin-bottom:18px; font-size:17px; font-weight:700; }
+  .address-content { padding:22px; }
+  .address-table { width:100%; border-collapse:collapse; }
+  .address-table th { padding:14px 16px; background:#fafafa; color:#475467; text-align:left; font-size:13px; }
+  .address-table td { padding:16px; border-top:1px solid #edf0f4; vertical-align:middle; }
+  .address-person { font-weight:650; color:#1f2937; }
+  .address-phone,.address-company { margin-top:3px; color:#7d8795; font-size:12px; }
+  .address-label { display:inline-block; padding:3px 9px; border-radius:999px; background:#eef2f7; color:#526174; font-size:12px; }
+  .address-detail { line-height:1.65; color:#344054; }
+  .address-empty { padding:76px 20px; text-align:center; color:#98a2b3; }
+  .address-empty .icon { font-size:44px; margin-bottom:10px; }
+  @media(max-width:720px){
+    .address-heading { flex-direction:column; }
+    .address-toolbar { align-items:stretch; }
+    .address-content { padding:12px; overflow-x:auto; }
+    .address-table { min-width:720px; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="address-heading">
+  <div><h1>个人地址簿</h1></div>
+  <span class="personal-badge">仅本人使用</span>
+</div>
+
+<section class="address-panel">
+  <div class="address-toolbar">
+    <strong>收件地址</strong>
+    <div class="address-toolbar-actions"><input id="address-search" class="address-search" type="search" placeholder="输入姓名、电话、公司或地址快速查找" oninput="renderAddresses()"><button class="btn btn-primary" type="button" onclick="showAddForm()">＋ 新增地址</button></div>
+  </div>
+
+  <div id="add-form" class="address-form" style="display:none">
+    <div class="address-form-title"><span id="add-form-title">新增收件地址</span><button class="btn btn-ghost btn-sm" type="button" onclick="hideAddForm()">取消</button></div>
+    <div class="form-grid-2">
+      <div class="form-group"><label class="form-label">地址标签</label><input id="a-label" placeholder="如：家里、公司"></div>
+      <div class="form-group"><label class="form-label">姓名<span class="req">*</span></label><input id="a-name" required></div>
+    </div>
+    <div class="form-grid-2">
+      <div class="form-group"><label class="form-label">手机号<span class="req">*</span></label><input id="a-phone" inputmode="tel" placeholder="手机号" required></div>
+      <div class="form-group"><label class="form-label">公司</label><input id="a-company" placeholder="选填"></div>
+    </div>
+    <div class="form-grid-3">
+      <div class="form-group"><label class="form-label">省</label><input id="a-province"></div>
+      <div class="form-group"><label class="form-label">市</label><input id="a-city"></div>
+      <div class="form-group"><label class="form-label">区/县</label><input id="a-district"></div>
+    </div>
+    <div class="form-group"><label class="form-label">详细地址<span class="req">*</span></label><input id="a-detail" placeholder="请填写到街道、园区、楼栋、门牌" required></div>
+    <button class="btn btn-primary" type="button" onclick="saveAddress()">保存地址</button>
+  </div>
+
+  <div class="address-content"><div id="addr-list">正在读取地址…</div></div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let personalAddressItems = [];
+const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+
+async function loadAddresses() {
+  const response = await fetch('/api/courier/addresses?scope=personal&role=receiver');
+  const result = await response.json();
+  const list = document.getElementById('addr-list');
+  if (!response.ok || !result.ok) {
+    list.innerHTML = '<div class="address-empty"><div class="icon">⚠️</div><div>地址读取失败，请稍后重试</div></div>';
+    return;
+  }
+  personalAddressItems = result.items || [];
+  renderAddresses();
+}
+function renderAddresses() {
+  const list = document.getElementById('addr-list');
+  const keyword = document.getElementById('address-search').value.trim().toLowerCase();
+  const items = personalAddressItems.filter(address => !keyword || [address.label,address.name,address.phone,address.company_name,address.province,address.city,address.district,address.detail].join(' ').toLowerCase().includes(keyword));
+  if (!items.length) {
+    list.innerHTML = `<div class="address-empty"><div class="icon">📍</div><div>${personalAddressItems.length ? '没有匹配的地址' : '暂无收件地址'}</div></div>`;
+    return;
+  }
+  list.innerHTML = `<table class="address-table"><thead><tr><th>标签</th><th>联系人</th><th>公司</th><th>详细地址</th><th>操作</th></tr></thead><tbody>${items.map(address => `
+    <tr>
+      <td><span class="address-label">${esc(address.label || '未命名')}</span></td>
+      <td><div class="address-person">${esc(address.name)}</div><div class="address-phone">${esc(address.phone)}</div></td>
+      <td><div class="address-company">${esc(address.company_name || '—')}</div></td>
+      <td><div class="address-detail">${esc([address.province,address.city,address.district,address.detail].filter(Boolean).join(''))}</div></td>
+      <td><button class="btn btn-ghost btn-sm" type="button" onclick="deleteAddress(${Number(address.id)})">删除</button></td>
+    </tr>`).join('')}</tbody></table>`;
+}
+
+function showAddForm() {
+  document.getElementById('add-form-title').textContent = '新增收件地址';
+  document.getElementById('add-form').style.display = 'block';
+}
+function hideAddForm() {
+  const form = document.getElementById('add-form');
+  form.style.display = 'none';
+  form.querySelectorAll('input').forEach(input => input.value = '');
+}
+async function saveAddress() {
+  const body = {
+    scope: 'personal', role: 'receiver',
+    label: document.getElementById('a-label').value.trim(), name: document.getElementById('a-name').value.trim(),
+    phone: document.getElementById('a-phone').value.trim(), company_name: document.getElementById('a-company').value.trim(),
+    province: document.getElementById('a-province').value.trim(), city: document.getElementById('a-city').value.trim(),
+    district: document.getElementById('a-district').value.trim(), detail: document.getElementById('a-detail').value.trim()
+  };
+  if (!body.name || !body.phone || !body.detail) { alert('请填写姓名、手机号和详细地址'); return; }
+  if (!body.phone) { alert('请输入手机号'); return; }
+  const response = await fetch('/api/courier/addresses', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+  const result = await response.json();
+  if (!response.ok || !result.ok) { alert(result.detail || '保存失败'); return; }
+  hideAddForm();
+  loadAddresses();
+}
+async function deleteAddress(id) {
+  if (!confirm('确认删除这个地址吗？')) return;
+  const response = await fetch(`/api/courier/addresses/${id}`, {method:'DELETE'});
+  if (!response.ok) { alert('删除失败'); return; }
+  loadAddresses();
+}
+loadAddresses();
+</script>
+{% endblock %}

@@ -1,0 +1,66 @@
+{% extends 'base.html' %}
+{% block title %}审批流程配置{% endblock %}
+{% block page_class %}admin-workspace{% endblock %}
+{% block content %}
+<div class="page-hero">
+  <h1>审批流程配置</h1>
+</div>
+
+<div style="margin-bottom:16px"><a href="/admin" class="btn btn-ghost btn-sm">← 返回控制台</a></div>
+
+<div class="card approval-settings-card">
+  <div class="card-title">审批规则</div>
+  <div class="flow-preview"><span>员工提交</span><b>→</b><span id="level-one-node">一级审批人审批</span><b>→</b><span>固定人员二级审批</span><b>→</b><span>自动向快递公司下单</span></div>
+  <label class="approval-switch">
+    <input id="level1-enabled" type="checkbox" {% if policy.level1_configured_enabled %}checked{% endif %} onchange="markSettingsChanged()">
+    <i aria-hidden="true"></i><b>开启一级审批</b>
+  </label>
+  <label class="setting-field">
+    <span>二级审批人（固定人员）</span>
+    <select id="level2-user" data-searchable data-placeholder="输入姓名或部门" onchange="markSettingsChanged()">
+      <option value="">请选择员工</option>
+      {% for user in users %}<option value="{{ user.id }}" {% if policy.level2_user_id == user.id %}selected{% endif %}>{{ user.name }}{% if user.department %} · {{ user.department }}{% endif %}</option>{% endfor %}
+    </select>
+  </label>
+  <label class="setting-field">
+    <span>待审批重复提醒间隔</span>
+    <select id="reminder-interval" onchange="markSettingsChanged()">
+      {% for minutes, label in [(30, '每 30 分钟'), (60, '每 1 小时'), (120, '每 2 小时'), (240, '每 4 小时'), (480, '每 8 小时'), (1440, '每天'), (10080, '每周')] %}
+      <option value="{{ minutes }}" {% if policy.reminder_interval_minutes == minutes %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <p class="reminder-help">申请停留在当前审批阶段时，将按此间隔持续提醒当前审批人；进入下一阶段后重新计时，通过或驳回后自动停止。</p>
+  <div class="setting-actions global-setting-actions"><button type="button" class="btn btn-primary" onclick="saveGlobalSettings()">保存审批开关、二级审批人和提醒时间</button><span id="global-save-state">一级审批开关、二级审批人和提醒时间共用此按钮保存</span></div>
+  <div class="supervisor-heading"><b>一级审批人配置</b><div class="supervisor-heading-actions"><button id="edit-approval-rows" type="button" class="btn btn-secondary btn-sm" onclick="enterApprovalEdit()">修改</button><button type="button" class="btn btn-secondary btn-sm" onclick="syncDingTalkSupervisors()">同步智能人事审批关系</button></div></div>
+  <div class="supervisor-search-bar"><input id="employee-search" type="search" autocomplete="off" placeholder="搜索申请人、部门或一级审批人"><span id="employee-search-count">共 {{ users|length }} 人</span></div>
+  <div class="supervisor-table-wrap"><table class="supervisor-table"><thead><tr><th>申请人</th><th>所属部门</th><th>一级审批人</th></tr></thead><tbody>
+    {% for user in users %}{% set needs_level1 = user.id in level1_applicant_ids %}{% set supervisor = user_by_id.get(user.supervisor_user_id) if needs_level1 else none %}{% set current_label = ((supervisor.name or '未命名员工') ~ ' · ' ~ (supervisor.department or '未设置部门') ~ ' · #' ~ supervisor.id) if supervisor else ('未配置一级审批人' if needs_level1 else '无需一级审批') %}<tr class="supervisor-row" data-search="{{ ((user.name or '') ~ ' ' ~ (user.department or '') ~ ' ' ~ current_label)|lower }}"><td><b>{{ user.name }}</b></td><td>{{ user.department or '—' }}</td><td><span class="level1-readonly {% if not needs_level1 %}level1-not-required{% elif not supervisor %}level1-missing{% endif %}">{{ current_label }}</span><input class="supervisor-input level1-editor" list="supervisor-options" autocomplete="off" placeholder="输入姓名、部门或选择无需一级审批" data-applicant-id="{{ user.id }}" value="{{ current_label if supervisor else ('无需一级审批' if not needs_level1 else '') }}"></td></tr>{% endfor %}
+  </tbody></table></div>
+  <datalist id="supervisor-options"><option value="无需一级审批"></option>{% for option in user_options %}<option value="{{ option.label }}"></option>{% endfor %}</datalist>
+  <div class="setting-actions supervisor-setting-actions"><button type="button" class="btn btn-primary" onclick="saveSupervisorSettings()">保存一级审批人配置</button><button id="cancel-approval-edit" type="button" class="btn btn-secondary" onclick="cancelApprovalEdit()">取消修改</button><span id="supervisor-save-state">请先点击“修改”再调整对应审批人</span></div>
+</div>
+
+<style>
+.approval-settings-card{max-width:1000px}.flow-preview{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:18px 0 24px;padding:16px;background:#f8fafc;border-radius:10px;color:#475569}.flow-preview span{padding:8px 12px;background:#fff;border:1px solid #dbe3ec;border-radius:8px}.flow-preview span.disabled{color:#94a3b8;text-decoration:line-through;background:#f1f5f9}.setting-field{display:grid;grid-template-columns:220px minmax(260px,1fr);align-items:center;gap:12px;margin:18px 0}.setting-field>span{font-weight:600;color:#334155}.setting-field select,.supervisor-table input{height:42px;border:1px solid #cbd5e1;border-radius:8px;padding:0 12px;background:#fff;width:100%;box-sizing:border-box}.approval-switch{display:flex;align-items:center;gap:12px;margin:18px 0;padding:15px;border:1px solid #dbe3ec;border-radius:10px;background:#fff;cursor:pointer}.approval-switch input{position:absolute;opacity:0;pointer-events:none}.approval-switch i{position:relative;width:44px;height:24px;border-radius:999px;background:#cbd5e1;transition:.2s;flex:0 0 auto}.approval-switch i:after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 3px #64748b;transition:.2s}.approval-switch input:checked+i{background:#1677ff}.approval-switch input:checked+i:after{transform:translateX(20px)}.global-setting-actions{padding-bottom:24px;border-bottom:1px solid #e2e8f0}.supervisor-heading{display:flex;align-items:center;justify-content:space-between;gap:18px;margin:28px 0 12px}.supervisor-heading-actions{display:flex;align-items:center;gap:8px}.supervisor-heading p{margin:5px 0 0;color:#64748b;font-size:13px}.supervisor-search-bar{display:flex;align-items:center;gap:12px;margin-bottom:10px}.supervisor-search-bar input{height:42px;min-width:0;flex:1;border:1px solid #cbd5e1;border-radius:8px;padding:0 13px;font-size:14px;background:#fff}.supervisor-search-bar input:focus{outline:2px solid rgba(22,119,255,.16);border-color:#1677ff}.supervisor-search-bar span{flex:0 0 auto;color:#64748b;font-size:13px}.supervisor-table-wrap{max-height:480px;overflow:auto;border:1px solid #e2e8f0;border-radius:10px}.supervisor-table{width:100%;border-collapse:collapse}.supervisor-table th,.supervisor-table td{padding:11px 13px;text-align:left;border-bottom:1px solid #eef2f7;font-size:13px}.supervisor-table th{position:sticky;top:0;background:#f8fafc;z-index:1}.supervisor-table td:nth-child(2){color:#64748b}.level1-readonly{display:inline-block;padding:6px 10px;border-radius:7px;background:#eef6ff;color:#1d4ed8}.level1-not-required{background:#f1f5f9;color:#64748b}.level1-missing{background:#fff7ed;color:#c2410c}.level1-editor,#cancel-approval-edit,.supervisor-setting-actions button{display:none}.approval-settings-card.editing .level1-editor,.approval-settings-card.editing #cancel-approval-edit,.approval-settings-card.editing .supervisor-setting-actions button{display:block}.approval-settings-card.editing .level1-readonly,.approval-settings-card.editing #edit-approval-rows{display:none}.setting-actions{display:flex;align-items:center;gap:14px;margin-top:22px;flex-wrap:wrap}#global-save-state,#supervisor-save-state{font-size:13px;color:#64748b}@media(max-width:700px){.setting-field{grid-template-columns:1fr}.supervisor-heading{align-items:flex-start;flex-direction:column}.supervisor-heading-actions{width:100%;flex-wrap:wrap}.supervisor-search-bar{align-items:stretch;flex-direction:column}.supervisor-search-bar span{padding-left:2px}}
+.reminder-help{margin:-8px 0 18px 232px;color:#64748b;font-size:13px;line-height:1.6}@media(max-width:700px){.reminder-help{margin-left:0}}
+.approval-settings-card{max-width:none;width:100%;box-sizing:border-box}
+</style>
+<script>
+function toggleLevelOne(){const on=document.getElementById('level1-enabled').checked;document.getElementById('level-one-node').classList.toggle('disabled',!on);}
+function markSettingsChanged(){toggleLevelOne();document.getElementById('global-save-state').textContent='有未保存的修改';}
+const supervisorIdByLabel=new Map({{ user_options|tojson }}.map(option=>[option.label,Number(option.id)]));
+function enterApprovalEdit(){document.querySelector('.approval-settings-card').classList.add('editing');document.getElementById('supervisor-save-state').textContent='修改后请单独保存一级审批人配置';}
+function cancelApprovalEdit(){location.reload();}
+function supervisorPayload(){const result={};for(const input of document.querySelectorAll('.supervisor-input')){const label=input.value.trim();const id=!label||label==='无需一级审批'?0:supervisorIdByLabel.get(label);if(id===undefined)throw new Error('请从候选列表选择一级审批人：'+label);if(id===Number(input.dataset.applicantId))throw new Error('员工不能设置自己为一级审批人');result[input.dataset.applicantId]=id;}return result;}
+function filterEmployees(){const keyword=document.getElementById('employee-search').value.trim().toLocaleLowerCase();let visible=0;for(const row of document.querySelectorAll('.supervisor-row')){const matched=!keyword||row.dataset.search.includes(keyword);row.hidden=!matched;if(matched)visible++;}document.getElementById('employee-search-count').textContent=keyword?`找到 ${visible} 人`:`共 ${visible} 人`;}
+document.getElementById('employee-search').addEventListener('input',filterEmployees);
+async function postApprovalSettings(url,payload,state){state.textContent='正在保存…';const response=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});const data=await response.json();if(!response.ok)throw new Error(data.detail||'保存失败');state.textContent=`已保存，并更新 ${data.updated_pending||0} 个待审批申请`;setTimeout(()=>location.reload(),800);}
+async function saveGlobalSettings(){const state=document.getElementById('global-save-state');try{await postApprovalSettings('/api/admin/approval-settings/global',{level1_enabled:document.getElementById('level1-enabled').checked,level2_user_id:Number(document.getElementById('level2-user').value),reminder_interval_minutes:Number(document.getElementById('reminder-interval').value)},state);}catch(error){state.textContent='保存失败：'+error.message;}}
+async function saveSupervisorSettings(){const state=document.getElementById('supervisor-save-state');try{await postApprovalSettings('/api/admin/approval-settings/supervisors',{supervisors:supervisorPayload()},state);}catch(error){state.textContent='保存失败：'+error.message;}}
+function syncProgressText(sync){if(!sync.total)return sync.message||'正在准备同步…';return `正在同步智能人事职务和主管：${sync.read}/${sync.total}，失败 ${sync.failed||0} 人`;}
+async function waitSupervisorSync(){const state=document.getElementById('supervisor-save-state');for(;;){await new Promise(resolve=>setTimeout(resolve,1200));const response=await fetch('/api/admin/supervisors/sync-dingtalk/status');const data=await response.json();if(!response.ok||!data.ok)throw new Error(data.detail||'无法读取同步进度');const sync=data.state;if(sync.status==='done'){state.textContent=`同步完成：读取 ${sync.read}/${sync.total} 人，未解析 ${sync.unresolved||0} 人，失败 ${sync.failed||0} 人`;setTimeout(()=>location.reload(),900);return;}if(sync.status==='failed')throw new Error(sync.message||'同步失败');state.textContent=syncProgressText(sync);}}
+async function syncDingTalkSupervisors(){const state=document.getElementById('supervisor-save-state');state.textContent='正在启动智能人事同步…';try{const response=await fetch('/api/admin/supervisors/sync-dingtalk',{method:'POST'});const data=await response.json();if(!response.ok||!data.ok)throw new Error(data.detail||'同步失败');state.textContent=syncProgressText(data.state||{});await waitSupervisorSync();}catch(error){state.textContent='同步失败：'+error.message;}}
+toggleLevelOne();
+</script>
+{% endblock %}

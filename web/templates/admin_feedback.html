@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}意见管理{% endblock %}
+{% block page_class %}admin-workspace{% endblock %}
+{% block head %}
+<style>
+.feedback-admin-head{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;margin-bottom:22px}.feedback-admin-head h1{font-size:28px}.feedback-admin-head p{color:var(--muted);margin-top:5px}.pending-summary{min-width:120px;padding:13px 16px;border-radius:12px;background:#fff;border:1px solid var(--border);color:#64748b;font-size:12px}.pending-summary strong{display:block;font-size:26px;color:#172033}.feedback-table-card{background:#fff;border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);overflow:hidden}.feedback-table-wrap{overflow:auto}.feedback-table{width:100%;border-collapse:collapse;min-width:860px}.feedback-table th{padding:13px 16px;text-align:left;background:#f8fafc;color:#64748b;font-size:12px}.feedback-table td{padding:16px;border-top:1px solid #edf0f4;vertical-align:top;font-size:13px}.feedback-table tr.selected-feedback{background:#fffbea;box-shadow:inset 4px 0 #f59e0b}.feedback-user{font-weight:650}.feedback-user-sub,.feedback-time{margin-top:3px;color:#94a3b8;font-size:12px}.feedback-text{max-width:500px;white-space:pre-wrap;line-height:1.65;word-break:break-word}.feedback-status{display:inline-flex;padding:4px 10px;border-radius:999px;font-size:12px}.feedback-status.pending{background:#fff4d6;color:#936000}.feedback-status.resolved{background:#dcfce7;color:#166534}.resolved-time{margin-top:6px;color:#94a3b8;font-size:11px}
+</style>
+{% endblock %}
+{% block content %}
+<div class="feedback-admin-head">
+  <div><h1>💬 意见管理</h1></div>
+  <div class="pending-summary"><strong>{{ pending_count }}</strong>待处理</div>
+</div>
+<section class="feedback-table-card">
+  <div class="feedback-table-wrap"><table class="feedback-table">
+    <thead><tr><th>提交人</th><th>意见内容</th><th>提交时间</th><th>状态</th><th>操作</th></tr></thead>
+    <tbody>
+      {% for item in feedback_items %}
+      <tr id="feedback-{{ item.feedback.id }}" class="{% if selected_feedback_id == item.feedback.id %}selected-feedback{% endif %}">
+        <td><div class="feedback-user">{{ item.user.name if item.user else '未知员工' }}</div><div class="feedback-user-sub">{{ item.user.department if item.user and item.user.department else (item.user.phone if item.user else '') }}</div></td>
+        <td><div class="feedback-text">{{ item.feedback.content }}</div></td>
+        <td><div class="feedback-time">{{ item.feedback.created_at.strftime('%Y-%m-%d %H:%M') if item.feedback.created_at else '—' }}</div></td>
+        <td><span class="feedback-status {{ item.feedback.status }}">{{ '已处理' if item.feedback.status == 'resolved' else '待处理' }}</span>{% if item.feedback.processed_at %}<div class="resolved-time">{{ item.feedback.processed_at.strftime('%Y-%m-%d %H:%M') }}</div>{% endif %}</td>
+        <td>{% if item.feedback.status != 'resolved' %}<button class="btn btn-primary btn-sm" onclick="resolveFeedback({{ item.feedback.id }},this)">标记已处理</button>{% else %}<span style="color:#94a3b8">已完成</span>{% endif %}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5"><div class="empty"><div class="icon">💬</div><p>暂无员工意见</p></div></td></tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+document.querySelector('.selected-feedback')?.scrollIntoView({behavior:'smooth',block:'center'});
+async function resolveFeedback(id,button){
+  button.disabled=true;button.textContent='处理中…';
+  try{
+    const response=await fetch('/api/admin/feedback/'+id+'/resolve',{method:'POST'});
+    const data=await response.json();
+    if(!response.ok||!data.ok)throw new Error(data.detail||'操作失败');
+    location.reload();
+  }catch(error){alert(error.message||'操作失败');button.disabled=false;button.textContent='标记已处理';}
+}
+</script>
+{% endblock %}

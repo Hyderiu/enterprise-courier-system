@@ -1,0 +1,276 @@
+{% extends "base.html" %}
+{% block title %}接口配置{% endblock %}
+{% block page_class %}admin-workspace{% endblock %}
+{% block head %}
+<style>
+  .config-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(440px,100%),1fr));gap:14px;align-items:stretch}
+  .carrier-card{display:flex;flex-direction:column;background:#fff;border:1px solid var(--border);border-radius:12px;overflow:hidden;box-shadow:0 1px 2px rgba(15,23,42,.04)}
+  .carrier-head{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:13px 16px;border-bottom:1px solid var(--border)}
+  .carrier-title{font-size:16px;font-weight:700;color:#0f172a}
+  .carrier-actions{display:flex;align-items:center;gap:8px}
+  .carrier-body{display:flex;flex:1;flex-direction:column;padding:15px 16px}
+  .field-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 14px}
+  .status-pill{white-space:nowrap;font-size:11px;padding:4px 8px;border-radius:999px;background:#fef3c7;color:#92400e}
+  .status-pill.ready{background:#dcfce7;color:#166534}
+  .config-field{min-width:0}
+  .config-field label{display:block;font-size:12px;font-weight:600;margin-bottom:5px;color:#475569}
+  .config-field input{width:100%;box-sizing:border-box;padding:9px 10px;border:1px solid var(--border);border-radius:7px;font-size:13px;font-family:monospace;background:#fff}
+  .config-field input:focus{border-color:var(--primary);outline:3px solid rgba(37,99,235,.1)}
+  .save-row{display:flex;justify-content:flex-end;margin-top:14px}
+  .save-row .btn{min-width:118px}
+  .settings-hero{display:flex;align-items:center;justify-content:space-between;gap:18px}
+  .settings-tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+  .region-switch,.carrier-add{display:flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--border);border-radius:9px;padding:7px 10px}
+  .region-switch select{border:0;background:transparent;font-weight:700;color:#1e293b;outline:0}
+  .carrier-add select{border:0;background:transparent;color:#334155;outline:0;min-width:112px}
+  .text-action{border:0;background:transparent;color:#64748b;font-size:12px;cursor:pointer;padding:4px}
+  .text-action:hover{color:#dc2626}
+  @media(max-width:720px){.settings-hero{align-items:flex-start;flex-direction:column}.settings-tools{justify-content:flex-start}.field-grid{grid-template-columns:1fr}}
+</style>
+{% endblock %}
+{% block content %}
+
+<div class="page-hero settings-hero">
+  <h1>🔑 快递接口配置</h1>
+  <div class="settings-tools">
+    <label class="region-switch"><span>配置区域</span><select onchange="location.href='/admin/settings?region='+encodeURIComponent(this.value)">{% for region in regions %}<option value="{{ region.code }}" {% if region.code == selected_region %}selected{% endif %}>{{ region.label }}</option>{% endfor %}</select></label>
+    <label class="carrier-add"><select id="carrier-to-add"><option value="">添加快递</option>{% if 'SF' not in enabled_carriers %}<option value="SF">顺丰速运</option>{% endif %}{% if 'DB' not in enabled_carriers %}<option value="DB">德邦快递</option>{% endif %}{% if 'JDL' not in enabled_carriers %}<option value="JDL">京东物流</option>{% endif %}</select><button type="button" class="btn btn-secondary btn-sm" onclick="addCarrier()">添加</button></label>
+  </div>
+</div>
+
+<div class="config-grid">
+  {% if 'SF' in enabled_carriers %}
+  <section class="carrier-card">
+    <div class="carrier-head">
+      <div class="carrier-title">🟠 顺丰速运</div>
+      <div class="carrier-actions"><span id="sf-status" class="status-pill">正在检查</span><button type="button" class="text-action" onclick="removeCarrier('SF','顺丰速运')">移除</button></div>
+    </div>
+    <div class="carrier-body">
+      <div class="field-grid">
+      <div class="config-field">
+        <label for="sf_customer_code">顾客编码／合作伙伴编码（partnerID）</label>
+        <input id="sf_customer_code" value="{{ settings.sf_customer_code }}" autocomplete="off">
+      </div>
+      <div class="config-field">
+        <label for="sf_check_word">生产校验码（checkWord）</label>
+        <input id="sf_check_word" value="{{ settings.sf_check_word }}" autocomplete="off">
+      </div>
+      <div class="config-field">
+        <label for="sf_monthly_card">顺丰月结卡号（monthlyCard）</label>
+        <input id="sf_monthly_card" value="{{ settings.sf_monthly_card }}" autocomplete="off">
+      </div>
+      </div>
+      <div class="save-row">
+        <button type="button" class="btn btn-primary" onclick="saveSection('sf',this)">保存顺丰配置</button>
+      </div>
+    </div>
+  </section>
+  {% endif %}
+
+  {% if selected_region in ['xiamen_other', 'beijing'] and settings.sf_city_feature_enabled %}
+  <section class="carrier-card">
+    <div class="carrier-head">
+      <div class="carrier-title">⚡ 顺丰同城急送</div>
+      <div class="carrier-actions"><span id="sf-city-status" class="status-pill">正在检查</span></div>
+    </div>
+    <div class="carrier-body">
+      <div class="field-grid">
+        <div class="config-field">
+          <label for="sf_city_dev_id">正式开发者 ID</label>
+          <input id="sf_city_dev_id" value="{{ settings.sf_city_dev_id }}" autocomplete="off">
+        </div>
+        <div class="config-field">
+          <label for="sf_city_dev_key">正式开发者密钥</label>
+          <input id="sf_city_dev_key" value="{{ settings.sf_city_dev_key }}" autocomplete="off">
+        </div>
+        <div class="config-field">
+          <label for="sf_city_shop_id">顺丰店铺 ID</label>
+          <input id="sf_city_shop_id" value="{{ settings.sf_city_shop_id }}" autocomplete="off">
+        </div>
+        <label class="config-field" style="display:flex;align-items:center;gap:9px;padding-top:24px">
+          <input id="sf_city_live_order_enabled" type="checkbox" style="width:auto" {% if settings.sf_city_live_order_enabled in ['1','true','True'] %}checked{% endif %}>
+          <span style="font-size:13px;color:#334155">审批通过后允许真实下单</span>
+        </label>
+      </div>
+      <div class="save-row">
+        <button type="button" class="btn btn-primary" onclick="saveSection('sf_city',this)">保存同城配置</button>
+      </div>
+    </div>
+  </section>
+  {% endif %}
+
+  {% if 'DB' in enabled_carriers %}
+  <section class="carrier-card">
+    <div class="carrier-head">
+      <div class="carrier-title">🔵 德邦快递</div>
+      <div class="carrier-actions"><span id="db-status" class="status-pill">正在检查</span><button type="button" class="text-action" onclick="removeCarrier('DB','德邦快递')">移除</button></div>
+    </div>
+    <div class="carrier-body">
+      <div class="field-grid">
+      <div class="config-field">
+        <label for="db_company_code">公司编码（companyCode）</label>
+        <input id="db_company_code" value="{{ settings.db_company_code }}" autocomplete="off">
+      </div>
+      <div class="config-field">
+        <label for="db_appkey">appkey</label>
+        <input id="db_appkey" value="{{ settings.db_appkey }}" autocomplete="off">
+      </div>
+      <div class="config-field">
+        <label for="db_sign">渠道前缀（sign）</label>
+        <input id="db_sign" value="{{ settings.db_sign }}" autocomplete="off">
+      </div>
+      <div class="config-field">
+        <label for="db_customer_code">月结客户编码（customerCode）</label>
+        <input id="db_customer_code" value="{{ settings.db_customer_code }}" autocomplete="off">
+      </div>
+      </div>
+      <div class="save-row">
+        <button type="button" class="btn btn-primary" onclick="saveSection('db',this)">保存德邦配置</button>
+      </div>
+    </div>
+  </section>
+  {% endif %}
+
+  {% if 'JDL' in enabled_carriers %}
+  <section class="carrier-card">
+    <div class="carrier-head">
+      <div class="carrier-title">🔴 京东物流</div>
+      <div class="carrier-actions"><span id="jdl-status" class="status-pill">正在检查</span><button type="button" class="text-action" onclick="removeCarrier('JDL','京东物流')">移除</button></div>
+    </div>
+    <div class="carrier-body">
+      <div class="field-grid">
+      <div class="config-field">
+        <label for="jdl_app_key">AppKey</label>
+        <input id="jdl_app_key" value="{{ settings.jdl_app_key }}" autocomplete="off">
+      </div>
+      <div class="config-field">
+        <label for="jdl_app_secret">AppSecret</label>
+        <input id="jdl_app_secret" value="{{ settings.jdl_app_secret }}" autocomplete="off">
+      </div>
+      <div class="config-field">
+        <label for="jdl_access_token">Access Token（商家授权后获得）</label>
+        <input id="jdl_access_token" value="{{ settings.jdl_access_token }}" autocomplete="off">
+      </div>
+      <div class="config-field">
+        <label for="jdl_customer_code">月结编码（customerCode）</label>
+        <input id="jdl_customer_code" value="{{ settings.jdl_customer_code }}" autocomplete="off">
+      </div>
+      </div>
+      <div class="save-row">
+        <button type="button" class="btn btn-primary" onclick="saveSection('jdl',this)">保存京东配置</button>
+      </div>
+    </div>
+  </section>
+  {% endif %}
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+const selectedRegion = {{ selected_region|tojson }};
+const enabledCarrierCodes = new Set({{ enabled_carriers|tojson }});
+function regionalPayload(payload) {
+  return Object.assign(payload, {
+    region_code: selectedRegion,
+    enabled_carriers: Array.from(enabledCarrierCodes)
+  });
+}
+function sectionPayload(section) {
+  if (section === 'sf') return regionalPayload({
+    sf_customer_code: document.getElementById('sf_customer_code').value.trim(),
+    sf_check_word: document.getElementById('sf_check_word').value.trim(),
+    sf_monthly_card: document.getElementById('sf_monthly_card').value.trim()
+  });
+  if (section === 'jdl') return regionalPayload({
+    jdl_app_key: document.getElementById('jdl_app_key').value.trim(),
+    jdl_app_secret: document.getElementById('jdl_app_secret').value.trim(),
+    jdl_access_token: document.getElementById('jdl_access_token').value.trim(),
+    jdl_customer_code: document.getElementById('jdl_customer_code').value.trim()
+  });
+  if (section === 'sf_city') return regionalPayload({
+    sf_city_dev_id: document.getElementById('sf_city_dev_id').value.trim(),
+    sf_city_dev_key: document.getElementById('sf_city_dev_key').value.trim(),
+    sf_city_shop_id: document.getElementById('sf_city_shop_id').value.trim(),
+    sf_city_live_order_enabled: document.getElementById('sf_city_live_order_enabled').checked ? '1' : '0'
+  });
+  return regionalPayload({
+    db_company_code: document.getElementById('db_company_code').value.trim(),
+    db_appkey: document.getElementById('db_appkey').value.trim(),
+    db_sign: document.getElementById('db_sign').value.trim(),
+    db_customer_code: document.getElementById('db_customer_code').value.trim()
+  });
+}
+
+async function saveCarrierSet() {
+  const response = await fetch('/api/admin/settings', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({region_code:selectedRegion,enabled_carriers:Array.from(enabledCarrierCodes)})
+  });
+  const result = await response.json();
+  if (!response.ok || !result.ok) throw new Error(result.detail || '保存失败');
+  location.reload();
+}
+function addCarrier() {
+  const select = document.getElementById('carrier-to-add');
+  if (!select.value) return;
+  enabledCarrierCodes.add(select.value);
+  saveCarrierSet().catch(error => alert('添加失败：' + error.message));
+}
+function removeCarrier(code, label) {
+  if (!confirm('确认从本区域移除' + label + '？已保存的接口参数不会被删除。')) return;
+  enabledCarrierCodes.delete(code);
+  saveCarrierSet().catch(error => alert('移除失败：' + error.message));
+}
+
+async function saveSection(section, button) {
+  const labels = {sf:'顺丰', sf_city:'顺丰同城', db:'德邦', jdl:'京东'};
+  const oldText = button.textContent;
+  button.disabled = true;
+  button.textContent = '保存中...';
+  try {
+    const response = await fetch('/api/admin/settings', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(sectionPayload(section))
+    });
+    const result = await response.json();
+    if (!response.ok || !result.ok) throw new Error(result.detail || '保存失败');
+    alert('✅ ' + labels[section] + '配置保存成功，已立即生效。');
+    location.reload();
+  } catch (error) {
+    alert('保存失败：' + error.message);
+    button.disabled = false;
+    button.textContent = oldText;
+  }
+}
+
+async function loadCarrierStatus() {
+  try {
+    const response = await fetch('/api/courier/status?region=' + encodeURIComponent(selectedRegion));
+    const result = await response.json();
+    setStatus('sf-status', result.sf.credentials_configured,
+      result.sf.credentials_configured ? '配置完整' : '配置待补充');
+    setStatus('sf-city-status', result.sf_city && result.sf_city.credentials_configured,
+      result.sf_city && result.sf_city.ready_for_live_order ? '已启用真实下单' :
+      (result.sf_city && result.sf_city.credentials_configured ? '可试算，真实下单未启用' : '配置待补充'));
+    setStatus('db-status', result.deppon.credentials_configured,
+      result.deppon.credentials_configured ? '配置完整' : '配置待补充');
+    setStatus('jdl-status', result.jdl.credentials_configured,
+      result.jdl.credentials_configured ? '配置完整' : '配置待补充');
+  } catch (error) {
+    ['sf-status','db-status','jdl-status'].forEach(id => {
+      const element = document.getElementById(id);
+      if (element) element.textContent = '状态读取失败';
+    });
+  }
+}
+
+function setStatus(id, ready, text) {
+  const element = document.getElementById(id);
+  if (!element) return;
+  element.textContent = ready ? '✅ ' + text : '⚠️ ' + text;
+  element.classList.toggle('ready', ready);
+}
+loadCarrierStatus();
+</script>
+{% endblock %}

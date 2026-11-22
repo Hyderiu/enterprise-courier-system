@@ -1,0 +1,38 @@
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Databases and runtime state
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+.runtime/
+output/
+backups/
+dist/
+release/
+
+# Python and editors
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.tmp-artifacts/
+node_modules/
+.venv/
+venv/
+.idea/
+.vscode/
+.DS_Store
+
+# Local deployment material
+.publish-config.json
+update_config.json
+publish-log.txt
+*.log

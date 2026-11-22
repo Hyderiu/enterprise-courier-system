@@ -1,0 +1,109 @@
+﻿{% extends 'base.html' %}
+{% block title %}快递服务配置{% endblock %}
+{% block page_class %}page-wide{% endblock %}
+{% block content %}
+<div class='page-hero'>
+  <h1>快递服务配置</h1>
+</div>
+
+<div style='margin-bottom:16px'>
+  <a href='/admin' class='btn btn-ghost btn-sm'>← 返回控制台</a>
+</div>
+
+<form id='services-form'>
+
+  <!-- SF -->
+  <div class='card'>
+    <div class='card-title'>
+      🟠 顺丰速运
+      <button type='button' class='btn btn-ghost btn-sm' onclick='toggleAll("SF", true)'>全选</button>
+      <button type='button' class='btn btn-ghost btn-sm' onclick='toggleAll("SF", false)'>全不选</button>
+    </div>
+    <div class='sv-grid'>
+      {% for s in sf_services %}
+      <label class='sv-card'>
+        <input type='checkbox' name='sv_{{ s.id }}' data-id='{{ s.id }}' value='{{ s.id }}'
+               {% if s.id in enabled_ids %}checked{% endif %}>
+        <div class='sv-body'>
+          <div class='sv-row'>
+            <span class='sv-name'>{{ s.name }}</span>
+            <span class='sv-code'>编码 {{ s.express_type }}</span>
+          </div>
+          <div class='sv-tag'>{{ s.tagline }}</div>
+          <div class='sv-meta'>
+            <span>⏱ {{ s.transit_time }}</span>
+            <span>⚖ {{ s.weight_min }}{% if s.weight_max %}-{{ s.weight_max }}{% else %}+{% endif %} kg</span>
+          </div>
+        </div>
+      </label>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- DB -->
+  <div class='card'>
+    <div class='card-title'>
+      🔵 德邦快递
+      <button type='button' class='btn btn-ghost btn-sm' onclick='toggleAll("DB", true)'>全选</button>
+      <button type='button' class='btn btn-ghost btn-sm' onclick='toggleAll("DB", false)'>全不选</button>
+    </div>
+    <div class='sv-grid'>
+      {% for s in db_services %}
+      <label class='sv-card'>
+        <input type='checkbox' name='sv_{{ s.id }}' data-id='{{ s.id }}' data-courier='{{ s.courier }}' value='{{ s.id }}'
+               {% if s.id in enabled_ids %}checked{% endif %}>
+        <div class='sv-body'>
+          <div class='sv-row'>
+            <span class='sv-name'>{{ s.name }}</span>
+            <span class='sv-code'>{{ s.express_name }}</span>
+          </div>
+          <div class='sv-tag'>{{ s.tagline }}</div>
+          <div class='sv-meta'>
+            <span>⏱ {{ s.transit_time }}</span>
+            <span>⚖ {{ s.weight_min }}{% if s.weight_max %}-{{ s.weight_max }}{% else %}+{% endif %} kg</span>
+          </div>
+        </div>
+      </label>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div style='text-align:center;padding:12px 0'>
+    <button type='button' class='btn btn-primary' style='padding:12px 40px' onclick='saveConfig()'>保存配置</button>
+  </div>
+</form>
+
+<style>
+.sv-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:12px }
+.sv-card { display:flex; gap:12px; padding:14px; border:2px solid var(--border, #e5e7eb); border-radius:10px; cursor:pointer; transition:all .15s; align-items:flex-start }
+.sv-card:hover { border-color:#667eea }
+.sv-card input { width:20px; height:20px; margin-top:2px; accent-color:#667eea }
+.sv-card:has(input:checked) { border-color:#667eea; background:#f5f3ff }
+.sv-body { flex:1 }
+.sv-row { display:flex; justify-content:space-between; align-items:center }
+.sv-name { font-weight:600; font-size:15px }
+.sv-code { font-size:11px; padding:2px 6px; background:#f1f5f9; border-radius:4px; color:#64748b }
+.sv-tag { font-size:13px; color:#64748b; margin-top:4px }
+.sv-meta { margin-top:8px; display:flex; gap:12px; font-size:12px; color:#94a3b8 }
+</style>
+
+<script>
+function toggleAll(courier, checked) {
+  document.querySelectorAll(\input[data-courier='\']\).forEach(cb => cb.checked = checked);
+}
+async function saveConfig() {
+  const ids = [...document.querySelectorAll('input[type=checkbox]:checked')].map(cb => cb.value);
+  const btn = event.target; btn.disabled = true; btn.textContent = '保存中...';
+  try {
+    const r = await fetch('/api/admin/services', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({enabled_ids: ids})
+    });
+    const j = await r.json();
+    if (j.ok) alert('保存成功！已启用 ' + j.enabled_count + ' 个服务');
+    else alert('保存失败');
+  } catch(e) { alert('Error: ' + e); }
+  finally { btn.disabled = false; btn.textContent = '保存配置'; }
+}
+</script>
+{% endblock %}

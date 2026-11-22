@@ -1,0 +1,182 @@
+{% extends "base.html" %}
+{% block title %}管理后台{% endblock %}
+{% block page_class %}page-wide{% endblock %}
+{% block content %}
+<div class="page-hero" style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff;border-radius:16px;padding:28px 32px;margin-bottom:24px">
+  <h1 style="color:#fff;margin:0">🛠 快递管理后台</h1>
+</div>
+
+<div class="admin-overview">
+  <section class="overview-card order-stat-card">
+    <div class="overview-head">
+      <h2>本月订单统计</h2>
+      <span class="current-month">{{ current_month_label }}</span>
+    </div>
+    <a class="order-stat-row" href="/admin/orders?month={{ current_month }}&include_cancelled=1">
+      <div class="stat-icon coral">📦</div>
+      <div class="stat-label">快递单量 <small>（单）</small></div>
+      <div class="stat-number">{{ stats.range_total or 0 }}</div>
+    </a>
+    <a class="signed-summary" href="/admin/orders?month={{ current_month }}&status=delivered&include_cancelled=1">已签收：<strong>{{ stats.range_delivered or 0 }}</strong></a>
+  </section>
+
+  <section class="overview-card dynamics-card">
+    <div class="overview-head dynamics-head">
+      <div>
+        <h2>本月快递包裹最新状态</h2>
+        <p>按每个包裹的最新状态统计，每单只计1次；进入在途后不再计入“已揽收”。</p>
+      </div>
+    </div>
+    <div class="dynamics-grid">
+      {% for key, label, icon, css in [('pending','待审核','⌛','pending'),('rejected','审核未通过','×','rejected'),('pending_pickup','待揽收','📦','waiting'),('picked','已揽收','🤲','picked'),('transit','在途','🚚','transit'),('delivering','派送中','🛵','delivering'),('delivered','已签收','✓','delivered'),('exception','异常包裹','!','exception'),('cancelled','已取消','−','cancelled')] %}
+      <a href="/admin/orders?month={{ current_month }}&status={{ key }}&include_cancelled=1" class="dynamic-item {% if key == 'exception' %}exception{% elif key == 'cancelled' %}muted{% endif %}"><span class="dynamic-icon {{ css }}">{{ icon }}</span><span><b>{{ label }}</b><strong>{{ dynamics[key] or 0 }}</strong></span></a>
+      {% endfor %}
+    </div>
+  </section>
+</div>
+
+<!-- 补充数据 -->
+<div class="bento-grid" style="display:grid;grid-template-columns:repeat(4,1fr);grid-auto-rows:minmax(120px,auto);gap:16px;margin-top:16px">
+
+  <!-- 快递公司分布 (大卡) -->
+  <div class="bento" style="grid-column:span 2;background:#fff;border-radius:16px;padding:24px;border:1px solid #f1f5f9">
+    <div style="font-size:14px;font-weight:600;color:#1e293b;margin-bottom:12px">🏢 快递公司分布</div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:#64748b;margin-bottom:4px"><span>🟠 顺丰速运</span><span>{{ stats.sf or 0 }} 件</span></div>
+        <div style="background:#f1f5f9;border-radius:6px;height:8px;overflow:hidden">
+          <div style="background:linear-gradient(90deg,#f97316,#ea580c);height:100%;width:{% if stats.total %}{{ ((stats.sf or 0) / (stats.total or 1) * 100)|round(0) }}%{% else %}0%{% endif %}"></div>
+        </div>
+      </div>
+      {% if sf_city_feature_enabled %}<div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:#64748b;margin-bottom:4px"><span>⚡ 顺丰同城急送</span><span>{{ stats.sf_city or 0 }} 件</span></div>
+        <div style="background:#f1f5f9;border-radius:6px;height:8px;overflow:hidden">
+          <div style="background:linear-gradient(90deg,#fb923c,#f97316);height:100%;width:{% if stats.total %}{{ ((stats.sf_city or 0) / (stats.total or 1) * 100)|round(0) }}%{% else %}0%{% endif %}"></div>
+        </div>
+      </div>{% endif %}
+      <div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:#64748b;margin-bottom:4px"><span>🔵 德邦快递</span><span>{{ stats.db or 0 }} 件</span></div>
+        <div style="background:#f1f5f9;border-radius:6px;height:8px;overflow:hidden">
+          <div style="background:linear-gradient(90deg,#3b82f6,#1d4ed8);height:100%;width:{% if stats.total %}{{ ((stats.db or 0) / (stats.total or 1) * 100)|round(0) }}%{% else %}0%{% endif %}"></div>
+        </div>
+      </div>
+      <div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:#64748b;margin-bottom:4px"><span>🔴 京东物流</span><span>{{ stats.jdl or 0 }} 件</span></div>
+        <div style="background:#f1f5f9;border-radius:6px;height:8px;overflow:hidden">
+          <div style="background:linear-gradient(90deg,#ef4444,#dc2626);height:100%;width:{% if stats.total %}{{ ((stats.jdl or 0) / (stats.total or 1) * 100)|round(0) }}%{% else %}0%{% endif %}"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 近7天趋势 -->
+  <div class="bento" style="grid-column:span 2;background:#fff;border-radius:16px;padding:24px;border:1px solid #f1f5f9">
+    <div style="font-size:14px;font-weight:600;color:#1e293b;margin-bottom:12px">📈 近7天趋势</div>
+    <div style="display:flex;align-items:flex-end;gap:8px;height:80px">
+      {% for t in trend %}
+      <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px">
+        <div style="font-size:10px;color:#64748b">{{ t.count }}</div>
+        <div style="width:100%;background:linear-gradient(180deg,#667eea,#764ba2);border-radius:4px 4px 0 0;height:{% if t.max and t.max > 0 %}{{ (t.count / t.max * 100)|round(0) }}{% else %}0{% endif %}%;min-height:4px"></div>
+        <div style="font-size:10px;color:#94a3b8">{{ t.date }}</div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+</div>
+
+<!-- 管理功能入口 -->
+<div style="margin-top:28px">
+  <div style="font-size:15px;font-weight:600;color:#1e293b;margin-bottom:14px">⚙️ 管理功能</div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px">
+    <a href="/admin/orders" class="admin-fn-card" style="background:#fff;border:1px solid #f1f5f9;border-radius:12px;padding:18px;text-decoration:none;color:inherit;display:block;transition:all .15s">
+      <div style="font-size:24px">📋</div>
+      <div style="font-weight:600;margin-top:6px">全部快递单</div>
+    </a>
+    <a href="/admin/monthly-exports" class="admin-fn-card" style="background:#fff;border:1px solid #f1f5f9;border-radius:12px;padding:18px;text-decoration:none;color:inherit;display:block;transition:all .15s">
+      <div style="font-size:24px">📊</div>
+      <div style="font-weight:600;margin-top:6px">快递费用分摊</div>
+    </a>
+    <a href="/admin/waybill-records" class="admin-fn-card" style="background:#fff;border:1px solid #f1f5f9;border-radius:12px;padding:18px;text-decoration:none;color:inherit;display:block;transition:all .15s">
+      <div style="font-size:24px">🧾</div>
+      <div style="font-weight:600;margin-top:6px">运单补充记录管理</div>
+    </a>
+    <a href="/admin/users" class="admin-fn-card" style="background:#fff;border:1px solid #f1f5f9;border-radius:12px;padding:18px;text-decoration:none;color:inherit;display:block;transition:all .15s">
+      <div style="font-size:24px">👥</div>
+      <div style="font-weight:600;margin-top:6px">成员与权限</div>
+    </a>
+    <a href="/admin/addresses" class="admin-fn-card" style="background:#fff;border:1px solid #f1f5f9;border-radius:12px;padding:18px;text-decoration:none;color:inherit;display:block;transition:all .15s">
+      <div style="font-size:24px">🏢</div>
+      <div style="font-weight:600;margin-top:6px">企业寄件地址</div>
+    </a>
+    <a href="/admin/approval-settings" class="admin-fn-card" style="background:#fff;border:1px solid #f1f5f9;border-radius:12px;padding:18px;text-decoration:none;color:inherit;display:block;transition:all .15s">
+      <div style="font-size:24px">🔀</div>
+      <div style="font-weight:600;margin-top:6px">审批流程配置</div>
+    </a>
+    <a href="/admin/cost" class="admin-fn-card" style="background:#fff;border:1px solid #f1f5f9;border-radius:12px;padding:18px;text-decoration:none;color:inherit;display:block;transition:all .15s">
+      <div style="font-size:24px">💰</div>
+      <div style="font-weight:600;margin-top:6px">费用归属</div>
+    </a>
+    <a href="/admin/item-types" class="admin-fn-card" style="background:#fff;border:1px solid #f1f5f9;border-radius:12px;padding:18px;text-decoration:none;color:inherit;display:block;transition:all .15s">
+      <div style="font-size:24px">📦</div>
+      <div style="font-weight:600;margin-top:6px">物品类型及默认快递推荐设置</div>
+    </a>
+    <a href="/admin/settings" class="admin-fn-card" style="background:#fff;border:1px solid #f1f5f9;border-radius:12px;padding:18px;text-decoration:none;color:inherit;display:block;transition:all .15s">
+      <div style="font-size:24px">🔑</div>
+      <div style="font-weight:600;margin-top:6px">接口与结算配置</div>
+    </a>
+    <a href="/admin/feedback" class="admin-fn-card" style="background:#fff;border:1px solid #f1f5f9;border-radius:12px;padding:18px;text-decoration:none;color:inherit;display:block;transition:all .15s">
+      <div style="font-size:24px">💬</div>
+      <div style="font-weight:600;margin-top:6px">意见管理</div>
+    </a>
+  </div>
+</div>
+
+<style>
+.admin-overview { display:grid; grid-template-columns:minmax(380px,.85fr) minmax(560px,1.35fr); gap:16px; }
+.overview-card { background:#fff; border:1px solid #edf0f4; border-radius:16px; padding:24px 28px; box-shadow:0 4px 18px rgba(15,23,42,.04); }
+.overview-head { min-height:42px; display:flex; align-items:center; justify-content:space-between; gap:18px; border-bottom:1px solid #eef1f5; padding-bottom:17px; }
+.overview-head h2 { margin:0; color:#172033; font-size:20px; }
+.dynamics-head { align-items:flex-start; }
+.dynamics-head p { margin:6px 0 0; color:#94a3b8; font-size:12px; line-height:1.5; }
+.current-month { color:#64748b; font-size:14px; white-space:nowrap; }
+.order-stat-row { display:grid; grid-template-columns:58px 1fr auto; align-items:center; gap:16px; padding:28px 0 14px; color:inherit; text-decoration:none; border-radius:10px; }
+.order-stat-row:hover { background:#f8fafc; }
+.stat-icon { width:54px; height:54px; display:grid; place-items:center; border-radius:50%; font-size:26px; }
+.stat-icon.coral { background:#fff0ed; }
+.stat-label { color:#1f2937; font-size:21px; }
+.stat-label small { color:#64748b; font-size:15px; }
+.stat-number { color:#172033; font-size:42px; font-weight:700; line-height:1; }
+.signed-summary { display:block; text-align:right; color:#94a3b8; font-size:14px; text-decoration:none; }
+.signed-summary strong { color:#64748b; }
+.dynamics-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:24px 28px; padding-top:25px; }
+.dynamic-item { min-width:0; display:flex; align-items:center; gap:13px; color:inherit; text-decoration:none; }
+.dynamic-item:hover b { color:#2563eb; }
+.dynamic-icon { flex:0 0 50px; width:50px; height:50px; display:grid; place-items:center; border-radius:50%; color:#fff; font-size:22px; font-weight:800; }
+.dynamic-icon.pending { background:#ff9138; }
+.dynamic-icon.rejected { background:#d97706; }
+.dynamic-icon.waiting { background:#9b7500; }
+.dynamic-icon.picked { background:#7168e8; }
+.dynamic-icon.transit { background:#2f91eb; }
+.dynamic-icon.delivering { background:#08765e; }
+.dynamic-icon.delivered { background:#16a34a; }
+.dynamic-icon.exception { background:#ff3d49; }
+.dynamic-icon.cancelled { background:#94a3b8; }
+.dynamic-item span:last-child { display:grid; gap:3px; }
+.dynamic-item b { color:#475569; font-size:15px; font-weight:500; white-space:nowrap; }
+.dynamic-item strong { color:#172033; font-size:25px; font-weight:500; line-height:1; }
+.dynamic-item.exception strong { color:#ef233c; }
+.dynamic-item.muted strong { color:#64748b; }
+.admin-fn-card:hover { border-color:#667eea !important; transform:translateY(-2px); box-shadow:0 4px 12px rgba(102,126,234,.15) }
+@media (max-width:1080px) {
+  .admin-overview { grid-template-columns:1fr; }
+}
+@media (max-width:720px) {
+  .overview-card { padding:20px; }
+  .overview-head { align-items:flex-start; flex-direction:column; }
+  .dynamics-grid { grid-template-columns:repeat(2,1fr); gap:20px 12px; }
+  .bento-grid { grid-template-columns:1fr !important; }
+  .bento-grid .bento { grid-column:span 1 !important; }
+}
+</style>
+{% endblock %}

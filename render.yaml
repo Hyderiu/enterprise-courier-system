@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: enterprise-courier-demo
+    runtime: python
+    plan: free
+    autoDeploy: true
+    buildCommand: python -m pip install -r requirements.txt
+    startCommand: python scripts/start_public_demo.py
+    healthCheckPath: /
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.11
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: PREVIEW_SAFE_MODE
+        value: true
+      - key: DINGTALK_LOGIN_ENABLED
+        value: false
+      - key: SCHEDULER_ENABLED
+        value: false
+      - key: SF_LIVE_ORDER_ENABLED
+        value: false
+      - key: SF_CITY_LIVE_ORDER_ENABLED
+        value: false
+      - key: DB_LIVE_ORDER_ENABLED
+        value: false
+      - key: JDL_LIVE_ORDER_ENABLED
+        value: false

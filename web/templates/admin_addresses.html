@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}企业寄件地址{% endblock %}
+{% block page_class %}admin-workspace{% endblock %}
+{% block content %}
+<section class="company-address-page">
+  <div class="company-address-head">
+    <div><h1>企业寄件地址</h1></div>
+    <div class="company-address-actions"><label>地址区域 <select onchange="location.href='/admin/addresses?region='+encodeURIComponent(this.value)">{% for region in regions %}<option value="{{ region.code }}" {% if region.code == selected_region %}selected{% endif %}>{{ region.label }}</option>{% endfor %}</select></label><button class="btn btn-primary" type="button" onclick="openAddressForm()">＋ 新增地址</button></div>
+  </div>
+  <div class="company-address-tools"><input id="address-search" type="search" placeholder="输入地址名称、公司或地区快速查找"></div>
+  <div class="company-address-table-wrap">
+    <table class="company-address-table"><thead><tr><th>地址名称</th><th>公司名称</th><th>地区</th><th>详细地址</th><th>操作</th></tr></thead><tbody id="address-list"><tr><td colspan="5" class="empty">正在加载…</td></tr></tbody></table>
+  </div>
+</section>
+
+<div id="address-modal" class="address-modal" hidden>
+  <div class="address-modal-backdrop" onclick="closeAddressForm()"></div>
+  <form class="address-modal-card" onsubmit="saveAddress(event)">
+    <div class="address-modal-head"><h2 id="address-modal-title">新增企业寄件地址</h2><button type="button" onclick="closeAddressForm()">×</button></div>
+    <input id="address-id" type="hidden">
+    <label>地址名称<input id="address-label" required placeholder="如：厦门办公室"></label>
+    <label>公司名称<input id="address-company" placeholder="选填"></label>
+    <div class="address-region-grid">
+      <label>省<input id="address-province" required></label><label>市<input id="address-city" required></label><label>区/县<input id="address-district" required></label>
+    </div>
+    <label>详细地址<input id="address-detail" required placeholder="街道、园区、楼栋、门牌"></label>
+    <div class="address-modal-actions"><button class="btn btn-ghost" type="button" onclick="closeAddressForm()">取消</button><button class="btn btn-primary" type="submit">保存</button></div>
+  </form>
+</div>
+
+<style>
+.company-address-page{max-width:1180px;margin:0 auto}.company-address-head{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:14px}.company-address-head h1{margin:0}.company-address-tools{padding:12px 14px;background:#fff;border:1px solid #e5e7eb;border-radius:12px}.company-address-tools input{width:min(440px,100%)}.company-address-table-wrap{margin-top:12px;background:#fff;border:1px solid #e5e7eb;border-radius:14px;overflow:auto}.company-address-table{width:100%;border-collapse:collapse}.company-address-table th,.company-address-table td{padding:13px 14px;text-align:left;border-bottom:1px solid #eef2f7}.company-address-table th{background:#f8fafc;color:#64748b;font-size:12px}.company-address-table td:last-child{white-space:nowrap}.empty{text-align:center!important;color:#94a3b8;padding:36px!important}.address-modal[hidden]{display:none}.address-modal{position:fixed;inset:0;z-index:1100;display:grid;place-items:center}.address-modal-backdrop{position:absolute;inset:0;background:rgba(15,23,42,.45)}.address-modal-card{position:relative;width:min(680px,92vw);padding:24px;background:#fff;border-radius:16px;box-shadow:0 24px 70px rgba(15,23,42,.24);display:grid;gap:14px}.address-modal-card label{display:grid;gap:6px;color:#334155;font-weight:600}.address-modal-card input{width:100%;box-sizing:border-box}.address-modal-head,.address-modal-actions{display:flex;align-items:center;justify-content:space-between;gap:12px}.address-modal-head h2{margin:0}.address-modal-head button{border:0;background:none;font-size:25px;cursor:pointer}.address-region-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.address-modal-actions{justify-content:flex-end;margin-top:6px}@media(max-width:680px){.address-region-grid{grid-template-columns:1fr}.company-address-table{min-width:800px}}
+.company-address-actions{display:flex;align-items:center;gap:14px}.company-address-actions label{display:flex;align-items:center;gap:8px}.company-address-actions select{height:40px;border:1px solid #d9dee7;border-radius:8px;padding:0 10px;background:#fff}
+.company-address-page{width:100%;max-width:none;min-width:0}
+</style>
+{% endblock %}
+{% block scripts %}
+<script>
+let companyAddresses=[];
+const selectedRegion={{ selected_region|tojson }};
+const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+async function request(url,options={}){const response=await fetch(url,{headers:{'Content-Type':'application/json',...(options.headers||{})},...options});const data=await response.json().catch(()=>({}));if(!response.ok||!data.ok)throw new Error(data.detail||'操作失败');return data;}
+function renderAddresses(){const keyword=document.getElementById('address-search').value.trim().toLowerCase();const rows=companyAddresses.filter(item=>!keyword||[item.label,item.company_name,item.province,item.city,item.district,item.detail].join(' ').toLowerCase().includes(keyword));const body=document.getElementById('address-list');if(!rows.length){body.innerHTML='<tr><td colspan="5" class="empty">没有匹配的企业寄件地址</td></tr>';return;}body.innerHTML=rows.map(item=>`<tr><td><b>${esc(item.label)}</b></td><td>${esc(item.company_name||'—')}</td><td>${esc(item.province+item.city+item.district)}</td><td>${esc(item.detail)}</td><td><button class="btn btn-ghost btn-sm" type="button" onclick="openAddressForm(${item.id})">编辑</button> <button class="btn btn-danger btn-sm" type="button" onclick="removeAddress(${item.id})">删除</button></td></tr>`).join('');}
+async function loadAddresses(){try{companyAddresses=(await request('/api/admin/company-addresses?region='+encodeURIComponent(selectedRegion))).items;renderAddresses();}catch(error){document.getElementById('address-list').innerHTML=`<tr><td colspan="5" class="empty">${esc(error.message)}</td></tr>`;}}
+function openAddressForm(id=0){const item=companyAddresses.find(row=>row.id===id)||{};document.getElementById('address-modal-title').textContent=id?'编辑企业寄件地址':'新增企业寄件地址';for(const [field,key] of [['address-id','id'],['address-label','label'],['address-company','company_name'],['address-province','province'],['address-city','city'],['address-district','district'],['address-detail','detail']])document.getElementById(field).value=item[key]||'';document.getElementById('address-modal').hidden=false;}
+function closeAddressForm(){document.getElementById('address-modal').hidden=true;}
+async function saveAddress(event){event.preventDefault();const id=Number(document.getElementById('address-id').value||0);const body={region_code:selectedRegion,label:document.getElementById('address-label').value.trim(),company_name:document.getElementById('address-company').value.trim(),province:document.getElementById('address-province').value.trim(),city:document.getElementById('address-city').value.trim(),district:document.getElementById('address-district').value.trim(),detail:document.getElementById('address-detail').value.trim()};try{await request('/api/admin/company-addresses'+(id?'/'+id:''),{method:id?'PUT':'POST',body:JSON.stringify(body)});closeAddressForm();loadAddresses();}catch(error){alert(error.message);}}
+async function removeAddress(id){if(!confirm('确认删除这个企业寄件地址吗？'))return;try{await request('/api/admin/company-addresses/'+id,{method:'DELETE'});loadAddresses();}catch(error){alert(error.message);}}
+document.getElementById('address-search').addEventListener('input',renderAddresses);loadAddresses();
+</script>
+{% endblock %}

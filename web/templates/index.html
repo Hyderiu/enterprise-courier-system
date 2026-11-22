@@ -1,0 +1,2382 @@
+{% extends "base.html" %}
+{% block title %}寄快递{% endblock %}
+{% block page_class %}page-order-wide{% endblock %}
+{% block content %}
+<div class="page-hero express-hero">
+  <div><h1>{{ '编辑并重新提交' if resubmit_order else '寄快递' }}</h1><span class="region-badge">当前寄件区域：{{ region_label }}</span>{% if resubmit_order %}<p style="margin-top:8px;color:#7c3aed;font-size:13px">正在修改原申请 {{ resubmit_order.order_no }}；重新提交后会生成一条新的待审核记录，原审批记录将保留。</p>{% endif %}</div>
+  {% if debug_region_switch %}
+  <label class="debug-region-switch"><span>调试预览区域</span><select onchange="location.href='/express?region='+encodeURIComponent(this.value)">{% for region in regions %}<option value="{{ region.code }}" {% if region.code == region_code %}selected{% endif %}>{{ region.label }}</option>{% endfor %}</select></label>
+  {% endif %}
+</div>
+
+<div class="steps">
+  <div class="step active"><div class="step-dot">1</div>填写信息</div>
+  <div class="step active"><div class="step-dot">2</div>选择快递</div>
+  <div class="step"><div class="step-dot">3</div>提交审批</div>
+</div>
+
+{% if sf_city_available %}
+<aside class="sf-city-guide" aria-label="顺丰同城急送提示">
+  <div class="sf-city-guide-icon">同城</div>
+  <div class="sf-city-guide-copy">{% if region_code == 'beijing' %}<strong>北京市内急件，可优先考虑顺丰同城急送</strong>{% else %}<strong>厦门市内急件，可优先考虑顺丰同城急送</strong>{% endif %}<span>适合需要骑士尽快上门、当天快速送达，且已经自行包装好的文件或小件物品。</span></div>
+  {% if region_code == 'beijing' %}<a class="sf-city-guide-action" href="/sf-city?region=beijing">去同城急送 <span>→</span></a>{% else %}<a class="sf-city-guide-action" href="/sf-city">去同城急送 <span>→</span></a>{% endif %}
+</aside>
+{% endif %}
+
+<form id="order-form">
+  <input type="hidden" name="source" value="{{ 'resubmission' if resubmit_order else 'system' }}">
+  <input type="hidden" name="source_id" value="{{ resubmit_order.order_no if resubmit_order else '' }}">
+  <!-- ========== 1. 收寄件人信息 ========== -->
+  <div class="party-grid">
+    <div class="card party-card sender-card">
+      <div class="card-title">
+        <span>🧑‍💼 寄件人信息</span>
+      </div>
+      <div class="form-grid-2">
+        <div class="form-group">
+          <label class="form-label">姓名<span class="req">*</span></label>
+          <input name="sender_name" placeholder="寄件人姓名" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">手机号<span class="req">*</span></label>
+          <input name="sender_phone" placeholder="手机号" inputmode="tel" required>
+        </div>
+      </div>
+      <div id="sender-address-summary" class="sender-address-box empty">
+        <button type="button" class="sender-address-picker-row" onclick="openSenderAddressModal()">
+          <span>请选择企业寄件地址{% if allow_custom_sender_address %}，或选择自定义填写{% endif %}</span><b>›</b>
+        </button>
+        <div class="sender-address-detail"><span>地址名称</span><strong id="sender-address-name"></strong></div>
+        <div class="sender-address-detail"><span>公司名称</span><strong id="sender-company-preview"></strong></div>
+        <div class="sender-address-detail"><span>省　　市</span><strong id="sender-region-preview"></strong></div>
+        <div class="sender-address-detail"><span>详细地址</span><strong id="sender-detail-preview"></strong></div>
+      </div>
+      <div id="sender-custom-fields" style="display:none">
+        <button type="button" class="sender-address-picker-row custom-picker" onclick="openSenderAddressModal()">
+          <span>请选择企业寄件地址{% if allow_custom_sender_address %}，或选择自定义填写{% endif %}</span><b>›</b>
+        </button>
+        <div class="form-group">
+          <label class="form-label">公司名称</label>
+          <input name="sender_company" placeholder="寄件单位（选填）">
+        </div>
+        <div class="form-grid-3">
+          <div class="form-group">
+            <label class="form-label">省<span class="req">*</span></label>
+            <select id="sender-province-list" class="address-cascade-select" name="sender_province" data-searchable data-placeholder="输入或选择省份"></select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">市<span class="req">*</span></label>
+            <select id="sender-city-list" class="address-cascade-select" name="sender_city" data-searchable data-placeholder="输入或选择城市"></select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">区/县<span class="req">*</span></label>
+            <select id="sender-district-list" class="address-cascade-select" name="sender_district" data-searchable data-placeholder="输入或选择区县"></select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">详细地址<span class="req">*</span></label>
+          <input name="sender_address" placeholder="请填写到街道、园区、楼栋、门牌">
+        </div>
+        <div class="inline-address-parser">
+          <label class="form-label">智能地址识别</label>
+          <div class="inline-address-parser-row">
+            <textarea id="sender-parse-input" rows="2" placeholder="粘贴姓名、电话和地址，可用逗号或空格分隔"></textarea>
+            <button type="button" class="btn btn-primary" onclick="doParseAddress('sender', this)">智能识别</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card party-card" id="receiver-card">
+      <div class="card-title">
+        <span id="receiver-title">🧑‍💼 收件人信息</span>
+        <span class="receiver-actions">
+          <button type="button" class="address-link" onclick="fillReceiverFromAddress()">从地址簿选取</button>
+        </span>
+      </div>
+      <button type="button" id="batch-entry-tip" class="batch-entry-tip" onclick="openBatchModal()">
+        <span class="batch-entry-icon">📦</span>
+        <span class="batch-entry-copy"><strong>多个收件地址可使用批量寄件</strong><small>适合奖品发放、礼品寄送、资料分发等场景，一次导入多位收件人。</small></span>
+        <em>开始批量寄件 →</em>
+      </button>
+      <div id="single-receiver" style="display:block">
+        <div class="form-grid-2">
+          <div class="form-group">
+            <label class="form-label">姓名<span class="req">*</span></label>
+            <input name="receiver_name" placeholder="收件人姓名" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">手机号<span class="req">*</span></label>
+            <input name="receiver_phone" placeholder="手机号" inputmode="tel" required>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">公司名称</label>
+          <input name="receiver_company" placeholder="收件单位（选填）">
+        </div>
+        <div class="form-grid-3">
+          <div class="form-group">
+            <label class="form-label">省<span class="req">*</span></label>
+            <select id="receiver-province-list" class="address-cascade-select" name="receiver_province" data-searchable data-placeholder="输入或选择省份" required></select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">市<span class="req">*</span></label>
+            <select id="receiver-city-list" class="address-cascade-select" name="receiver_city" data-searchable data-placeholder="输入或选择城市" required></select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">区/县<span class="req">*</span></label>
+            <select id="receiver-district-list" class="address-cascade-select" name="receiver_district" data-searchable data-placeholder="输入或选择区县" required></select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">详细地址<span class="req">*</span></label>
+          <input name="receiver_address" placeholder="请填写到街道、园区、楼栋、门牌" required>
+        </div>
+        <div class="inline-address-parser">
+          <label class="form-label">智能地址识别</label>
+          <div class="inline-address-parser-row">
+            <textarea id="receiver-parse-input" rows="2" placeholder="粘贴姓名、电话和地址，可用逗号或空格分隔"></textarea>
+            <button type="button" class="btn btn-primary" onclick="doParseAddress('receiver', this)">智能识别</button>
+          </div>
+        </div>
+        <label class="save-address-option">
+          <input type="checkbox" id="save-receiver-address">
+          <span>保存到收件人地址簿</span>
+        </label>
+      </div>
+      <div id="batch-receiver" style="display:none;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:16px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <div style="font-weight:600;color:#15803d">📦 批量模式 — 已导入 <span id="batch-count">0</span> 条收件人</div>
+          <span><button type="button" class="btn btn-ghost btn-sm" onclick="openBatchModal()">重新上传</button><button type="button" class="btn btn-ghost btn-sm" onclick="exitBatchMode()">改为单个收件人</button></span>
+        </div>
+        <div id="batch-preview" style="max-height:180px;overflow-y:auto;font-size:12px"></div>
+        <div id="batch-quote-review" class="batch-quote-review">
+          <div class="batch-quote-empty"><strong>逐票费用与预计送达</strong><span>完善寄件信息后即可查询。</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== 2. 物品信息 ========== -->
+  <div class="card">
+    <div class="card-title">物品信息</div>
+    <div class="form-group">
+      <label class="form-label">📝 寄件原因<span class="req">*</span></label>
+      <textarea name="shipping_reason" rows="2" required
+                placeholder="例：双11抽奖礼品寄送给中奖客户 / 合同文件寄给供应商 / 项目物料调拨"></textarea>
+    </div>
+    <div class="item-core-grid">
+      <div class="form-group">
+        <label class="form-label">物品类型<span class="req">*</span></label>
+        <select id="item_name" name="item_name" required data-searchable data-placeholder="输入物品类型">
+          <option value="">请选择物品类型</option>
+          {% for item_type in item_types %}
+          <option value="{{ item_type }}">{{ item_type }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">预估重量 (kg)<span class="req">*</span></label>
+        <input name="item_weight" type="number" step="1" min="1" value="1" placeholder="请输入预估重量" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label">预估体积 (m³)</label>
+        <button type="button" id="item-volume-trigger" class="volume-trigger" onclick="openVolumeModal()">选填；填写后预估费用更准确</button>
+        <input type="hidden" name="item_volume" id="item-volume">
+      </div>
+      <div class="form-group">
+        <label class="form-label">包裹数量<span class="req">*</span></label>
+        <div class="parcel-count-control">
+          <input name="parcel_count" id="parcel-count" type="number" min="1" max="307" step="1" value="1" required oninput="onParcelCountChange()">
+          <button type="button" class="parcel-help" aria-label="包裹数量说明">?</button>
+          <span class="parcel-tooltip">同一收件地址一次寄出几个独立包装，就填写几个。例如寄出两个纸箱，请填写 2。请分别封装好每个包裹，快递员上门后会按实际包裹数量处理面单，最终运费以实际揽收为准。</span>
+        </div>
+      </div>
+    </div>
+    <input name="item_count" type="hidden" value="1">
+    <div class="insurance-panel">
+      <label class="insurance-toggle">
+        <input type="checkbox" id="insurance-enabled" onchange="toggleInsurance()">
+        <span><strong>需要保价</strong><small id="insurance-capability-note">贵重物品建议按照可证明的实际价值足额保价</small></span>
+      </label>
+      <div id="insurance-fields" class="insurance-fields" hidden>
+        <label class="form-label" for="insurance-amount">物品声明价值（元）<span class="req">*</span></label>
+        <input id="insurance-amount" name="insurance_amount" type="number" min="0.01" step="0.01" disabled placeholder="请输入物品实际价值" oninput="updateInsuranceEstimate(); scheduleServiceQuotes()">
+        <div id="insurance-estimate" class="insurance-estimate">填写金额后显示预计保价费</div>
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">备注</label>
+      <input name="item_remark" placeholder="其他需要快递员注意的信息">
+    </div>
+  </div>
+
+  <!-- ========== 3. 上门时间 ========== -->
+  <div class="card">
+    <div class="card-title">上门时间<span class="req">*</span></div>
+    <input type="hidden" name="pickup_time_mode" id="pickup-time-mode" value="immediate">
+    <input type="hidden" name="pickup_start_time" id="pickup-start-time">
+    <input type="hidden" name="pickup_end_time" id="pickup-end-time">
+    <div class="pickup-day-grid">
+      <button type="button" id="pickup-immediate" class="pickup-choice selected" onclick="selectImmediatePickup()">立即上门</button>
+      <button type="button" class="pickup-choice pickup-day" data-day-offset="0" onclick="selectPickupDay(0)"><strong>今天</strong><span></span></button>
+      <button type="button" class="pickup-choice pickup-day" data-day-offset="1" onclick="selectPickupDay(1)"><strong>明天</strong><span></span></button>
+      <button type="button" class="pickup-choice pickup-day" data-day-offset="2" onclick="selectPickupDay(2)"><strong>后天</strong><span></span></button>
+    </div>
+    <div id="pickup-slot-panel" class="pickup-slot-panel" hidden>
+      <div id="pickup-slot-grid" class="pickup-slot-grid">
+        <button type="button" data-start="8" data-end="10">08:00–10:00</button>
+        <button type="button" data-start="10" data-end="12">10:00–12:00</button>
+        <button type="button" data-start="12" data-end="14">12:00–14:00</button>
+        <button type="button" data-start="14" data-end="16">14:00–16:00</button>
+        <button type="button" data-start="16" data-end="18">16:00–18:00</button>
+        <button type="button" data-start="18" data-end="20">18:00–20:00</button>
+      </div>
+    </div>
+  </div>
+
+  <style>
+  .pickup-day-grid { display:grid; grid-template-columns:repeat(4,minmax(110px,1fr)); gap:8px }
+  .pickup-choice { min-height:52px; border:1px solid #93c5fd; border-radius:7px; background:#fff; color:#2563eb; cursor:pointer; font-size:14px }
+  .pickup-choice strong,.pickup-choice span { display:block }
+  .pickup-choice span { margin-top:3px; font-size:12px }
+  .pickup-choice.selected { background:#4da3f5; border-color:#4da3f5; color:#fff }
+  .pickup-choice:disabled { background:#f8fafc; border-color:#e2e8f0; color:#cbd5e1; cursor:not-allowed }
+  .pickup-slot-panel { display:block; margin-top:10px }
+  .pickup-slot-panel[hidden] { display:none }
+  .pickup-slot-grid { display:grid; grid-template-columns:repeat(3,minmax(120px,1fr)); gap:8px }
+  .pickup-slot-grid button { min-height:38px; border:1px solid #93c5fd; border-radius:6px; background:#fff; color:#2563eb; cursor:pointer }
+  .pickup-slot-grid button.selected { background:#4da3f5; border-color:#4da3f5; color:#fff }
+  .pickup-slot-grid button:disabled { background:#f8fafc; border-color:#e2e8f0; color:#cbd5e1; cursor:not-allowed }
+  @media (max-width:720px) {
+    .pickup-day-grid { grid-template-columns:repeat(2,1fr) }
+    .pickup-slot-grid { grid-template-columns:repeat(2,1fr) }
+  }
+  </style>
+
+  <!-- ========== 4. 快递方式 ========== -->
+  <div class="card">
+    <div class="card-title service-card-title">
+      <span>快递方式</span>
+      <button type="button" id="refresh-quotes-btn" class="quote-refresh-btn" onclick="refreshQuotesNow()" title="使用当前页面信息重新查询运费和时效">↻ 刷新运费和时效</button>
+    </div>
+    <input type="hidden" name="courier_type" id="courier_type" value="SF">
+    <input type="hidden" name="created_by" id="created_by" value="">
+    <input type="hidden" name="express_type" id="express_type" value="">
+    <input type="hidden" name="express_type_name" id="express_type_name" value="">
+    <div id="quote-missing-notice" class="quote-missing-notice" role="status" aria-live="polite"></div>
+    <div id="service-picker">
+      <div style="font-size:13px;color:var(--muted);margin-bottom:8px">正在加载可用服务...</div>
+    </div>
+
+    <details id="api-request-inspector" class="api-request-inspector" hidden>
+      <summary id="api-request-summary">查看顺丰 API 请求（联调检查）</summary>
+      <div class="api-inspector-body">
+        <div class="api-inspector-warning">这里展示页面当前信息生成的请求。时效价格查询会自动发送；预下单会在提交审批前发送；正式下单只会在全部审批通过后发送。</div>
+        <div id="api-request-status" class="api-request-status">请先完整填写收寄件、物品和快递产品信息。</div>
+        <div id="api-request-tabs" class="api-request-tabs"></div>
+        <pre id="api-request-code" class="api-request-code"></pre>
+      </div>
+    </details>
+  </div>
+
+  <!-- ========== 5. 费用归属 ========== -->
+  <div class="card">
+    <div class="card-title">费用归属</div>
+    <div class="cost-type-grid">
+      <label style="flex:1;cursor:pointer">
+        <input type="radio" name="cost_type" value="department" checked onchange="onCostType()" style="opacity:0;width:0;height:0;position:absolute">
+        <div class="cost-opt" id="cost-opt-dept">
+          <div style="font-weight:600">🏢 部门费用</div>
+          <div style="font-size:12px;color:var(--muted)">归属到个人所在部门</div>
+        </div>
+      </label>
+      <label style="flex:1;cursor:pointer">
+        <input type="radio" name="cost_type" value="project" onchange="onCostType()" style="opacity:0;width:0;height:0;position:absolute">
+        <div class="cost-opt" id="cost-opt-proj">
+          <div style="font-weight:600">📁 项目费用</div>
+          <div style="font-size:12px;color:var(--muted)">归属到指定项目</div>
+        </div>
+      </label>
+    </div>
+    <div id="cost-dept-box">
+      <div class="form-group">
+        <label class="form-label">选择部门<span class="req">*</span></label>
+        <select id="dept-select" data-searchable data-placeholder="输入部门名称" onchange="onDeptChange()" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:14px">
+          <option value="">-- 加载中 --</option>
+        </select>
+      </div>
+    </div>
+    <div id="cost-proj-box" style="display:none">
+      <div class="form-group">
+        <label class="form-label">选择项目<span class="req">*</span></label>
+        <select id="project-select" data-searchable data-placeholder="输入项目名称" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:14px">
+          <option value="">-- 加载中 --</option>
+        </select>
+      </div>
+    </div>
+    <input type="hidden" id="cost_type_input" value="department">
+    <input type="hidden" name="dept_code" id="dept_code_input" value="">
+    <input type="hidden" name="dept_name" id="dept_name_input" value="">
+    <input type="hidden" name="project_code" id="project_code_input" value="">
+    <input type="hidden" name="project_name" id="project_name_input" value="">
+  </div>
+    <div class="order-summary-bar" aria-label="订单费用汇总">
+      <div class="summary-fees" aria-live="polite">
+        <div><span>预估快递费</span><strong id="summary-freight">--</strong><em>元</em></div>
+        <div><span>预估保价费</span><strong id="summary-insurance">--</strong><em>元</em></div>
+      </div>
+      <div class="summary-total"><span>预估总价</span><strong id="summary-total">--</strong><em>元</em></div>
+      <div class="summary-action">
+        <div id="submit-feedback" class="submit-feedback" role="alert" aria-live="assertive" hidden>
+          <strong id="submit-feedback-title">提交失败</strong>
+          <span id="submit-feedback-message"></span>
+        </div>
+        <small>最终费用以揽收称重和快递公司结算为准</small>
+        <div class="summary-buttons">
+          <button type="button" id="submit-btn" class="btn btn-primary" onclick="submitOrder()">{{ '重新提交审核' if resubmit_order else '提交审批' }}</button>
+        </div>
+      </div>
+    </div>
+</form>
+
+<!-- 固定寄件地址 Modal -->
+<div id="sender-address-modal" class="sender-address-modal" style="display:none">
+  <div class="modal-backdrop" onclick="closeSenderAddressModal()"></div>
+  <div class="sender-address-dialog">
+    <div class="sender-address-dialog-head">
+      <h3>选择寄件地址</h3>
+      <button type="button" class="sender-address-close" onclick="closeSenderAddressModal()">×</button>
+    </div>
+    <div style="padding:12px 18px;border-bottom:1px solid #e5e7eb"><input id="sender-address-search" type="search" placeholder="输入地址名称、公司或地址快速查找" oninput="filterSenderAddressChoices()" style="width:100%;box-sizing:border-box"></div>
+    <div class="sender-address-table">
+      <div class="sender-address-table-head">
+        <span>地址名称</span><span>详细地址</span><span>公司名称</span>
+      </div>
+      {% for address in sender_address_items %}
+      <button type="button" class="sender-address-option" data-address-id="{{ address.id }}" onclick="selectSenderAddress('{{ address.id }}')">
+        <span><i class="address-radio"></i>{{ address.name }}</span>
+        <span>{{ address.province }}{{ address.city }}{{ address.district }}<br>{{ address.detail }}</span>
+        <span>{{ address.company or '—' }}</span>
+      </button>
+      {% endfor %}
+      {% if allow_custom_sender_address %}
+      <button type="button" class="sender-address-option custom" data-address-id="custom" onclick="selectSenderAddress('custom')">
+        <span><i class="address-radio"></i>自定义填写</span>
+        <span>自行填写省、市、区和详细地址</span>
+        <span>公司名称可选填</span>
+      </button>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- 个人收件地址选择 Modal -->
+<div id="receiver-address-modal" class="sender-address-modal" style="display:none">
+  <div class="modal-backdrop" onclick="closeReceiverAddressModal()"></div>
+  <div class="sender-address-dialog">
+    <div class="sender-address-dialog-head"><h3>从个人地址簿选取</h3><button type="button" class="sender-address-close" onclick="closeReceiverAddressModal()">×</button></div>
+    <div style="padding:12px 18px;border-bottom:1px solid #e5e7eb"><input id="receiver-address-search" type="search" placeholder="输入姓名、电话、公司或地址快速查找" oninput="renderReceiverAddressChoices()" style="width:100%;box-sizing:border-box"></div>
+    <div id="receiver-address-choices" class="sender-address-table"></div>
+  </div>
+</div>
+
+<!-- 预估体积 Modal -->
+<div id="volume-modal" class="volume-modal" style="display:none">
+  <div class="modal-backdrop" onclick="closeVolumeModal()"></div>
+  <div class="volume-dialog">
+    <div class="volume-dialog-head"><h3>预估体积</h3><button type="button" onclick="closeVolumeModal()">×</button></div>
+    <div class="volume-dialog-body">
+      <div class="dimension-grid">
+        <label><input id="volume-length" type="number" min="1" step="1" placeholder="长" oninput="calculateVolume()"><span>cm</span></label>
+        <b>×</b>
+        <label><input id="volume-width" type="number" min="1" step="1" placeholder="宽" oninput="calculateVolume()"><span>cm</span></label>
+        <b>×</b>
+        <label><input id="volume-height" type="number" min="1" step="1" placeholder="高" oninput="calculateVolume()"><span>cm</span></label>
+      </div>
+      <div class="volume-total"><span>总体积</span><div><input id="volume-total" readonly><em>立方米</em></div></div>
+    </div>
+    <div class="volume-dialog-actions"><button type="button" class="btn btn-ghost" onclick="closeVolumeModal()">取消</button><button type="button" class="btn btn-primary" onclick="confirmVolume()">确定</button></div>
+  </div>
+</div>
+
+<!-- 批量上传 Modal -->
+<div id="batch-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.5);z-index:1000;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:16px;width:580px;max-width:92vw;max-height:88vh;overflow-y:auto;padding:28px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
+      <h3 style="margin:0;font-size:18px">📤 批量导入收件人信息</h3>
+      <button onclick="closeBatchModal()" style="border:none;background:none;font-size:24px;cursor:pointer;color:#94a3b8">✕</button>
+    </div>
+    <div style="background:#f1f5f9;border-radius:10px;padding:14px;font-size:13px;color:#475569;margin-bottom:18px;line-height:1.8">
+      <div><b>📥 下载模板：</b> <a href="/api/batches/template" style="color:#667eea;text-decoration:none">批量收件人示例.xlsx ↓</a></div>
+      <div><b>📋 模板列：</b>收件人姓名 / 收件人电话 / 收件人地址</div>
+      <div><b>🧭 地址识别：</b>地址放在一个格子中，系统自动补全并拆分省、市、区县和详细地址</div>
+      <div><b>💡 提示：</b>每行生成一票独立订单，单次最多 100 条；任一行格式有误时需修正后重新上传</div>
+      <div><b>🔎 流程：</b>上传后逐票预下单校验 → 提交审批 → 全部审批通过后逐票下单</div>
+    </div>
+    <label id="batch-dropzone" for="batch-file" tabindex="0" role="button" aria-label="选择或拖入 Excel 文件" style="display:block;border:2px dashed #cbd5e1;border-radius:12px;padding:36px;text-align:center;cursor:pointer;transition:.2s">
+      <div style="font-size:40px">📁</div>
+      <div style="margin-top:8px;color:#475569;font-size:14px">点击选择，或将 Excel 文件拖到此处</div>
+      <div style="font-size:12px;color:#94a3b8;margin-top:4px">支持 .xlsx 批量收件模板</div>
+      <input type="file" id="batch-file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onchange="handleBatchUpload(this)" style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;pointer-events:none">
+    </label>
+    <div id="batch-result" style="margin-top:18px"></div>
+    <div style="margin-top:18px;display:flex;gap:10px;justify-content:flex-end">
+      <button onclick="closeBatchModal()" class="btn btn-ghost" style="padding:8px 18px">取消</button>
+      <button id="batch-confirm" onclick="confirmBatchImport()" class="btn btn-primary"
+              style="background:linear-gradient(135deg,#10b981,#059669);border:none;padding:8px 18px;display:none">确认导入</button>
+    </div>
+  </div>
+</div>
+
+<style>
+.page-order-wide { max-width:1240px; padding:16px 24px 102px; }
+.page-order-wide .page-hero { margin-bottom:8px; }
+.page-order-wide .page-hero h1 { font-size:24px; margin:0; }
+.express-hero { display:flex; align-items:center; justify-content:space-between; gap:20px; }
+.debug-region-switch { display:flex; align-items:center; gap:10px; padding:9px 12px; background:#fff; border:1px solid var(--border); border-radius:10px; color:#475569; font-size:13px; }
+.debug-region-switch select { border:0; outline:0; background:transparent; color:#1e293b; font-weight:700; }
+.page-order-wide .steps { margin-bottom:10px; gap:6px; }
+.page-order-wide .step { padding:6px 10px; }
+.sf-city-guide { display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:13px; margin:0 0 10px; padding:11px 14px; border:1px solid #bfdbfe; border-radius:10px; background:linear-gradient(90deg,#eff6ff 0%,#f8fbff 68%,#fff 100%); }
+.sf-city-guide-icon { display:flex; align-items:center; justify-content:center; width:42px; height:42px; border-radius:10px; background:#1677ff; color:#fff; font-size:12px; font-weight:700; letter-spacing:.04em; box-shadow:0 5px 14px rgba(22,119,255,.18); }
+.sf-city-guide-copy strong,.sf-city-guide-copy span { display:block; }.sf-city-guide-copy strong { color:#1e3a5f; font-size:14px; }.sf-city-guide-copy span { margin-top:3px; color:#64748b; font-size:12px; line-height:1.45; }
+.sf-city-guide-action { display:inline-flex; align-items:center; gap:7px; padding:8px 12px; border:1px solid #93c5fd; border-radius:8px; background:#fff; color:#1677ff; text-decoration:none; font-size:13px; font-weight:700; white-space:nowrap; }.sf-city-guide-action:hover { border-color:#1677ff; background:#f0f7ff; }
+.page-order-wide .card { padding:15px 18px; margin-bottom:10px; border-radius:10px; }
+.page-order-wide .card-title { margin-bottom:9px; padding-bottom:8px; }
+.batch-quote-review{margin-top:10px;border:1px solid #bbf7d0;border-radius:10px;background:#fff;overflow:hidden}
+.batch-quote-empty{display:flex;align-items:center;gap:12px;padding:11px 12px;color:#64748b;font-size:12px;white-space:nowrap;overflow:hidden}.batch-quote-empty strong{color:#334155;font-size:13px;white-space:nowrap}.batch-quote-empty span{overflow:hidden;text-overflow:ellipsis}
+.batch-entry-tip{display:grid;grid-template-columns:40px minmax(0,1fr) auto;align-items:center;column-gap:14px;width:100%;margin:2px 0 16px;padding:14px 16px;border:1px solid #bfdbfe;border-radius:10px;background:linear-gradient(90deg,#f0f7ff,#fbfdff);color:#475569;text-align:left;cursor:pointer;transition:border-color .15s,box-shadow .15s}.batch-entry-tip:hover{border-color:#60a5fa;box-shadow:0 5px 16px rgba(37,99,235,.08)}.batch-entry-icon{display:flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:10px;background:#fff;border:1px solid #dbeafe;font-size:23px}.batch-entry-copy{display:flex;flex-direction:column;gap:4px;min-width:0}.batch-entry-copy strong{color:#1e3a5f;font-size:14px}.batch-entry-copy small{color:#64748b;font-size:12px;line-height:1.45}.batch-entry-tip em{padding-left:14px;color:#1677ff;font-size:13px;font-style:normal;font-weight:700;white-space:nowrap}
+.batch-quote-summary{display:flex;align-items:center;gap:20px;flex-wrap:wrap;padding:10px 12px;background:#f0fdf4;color:#166534;font-size:13px}
+.batch-quote-summary strong{font-size:18px;color:#14532d}.batch-quote-refresh{margin-left:-8px;padding:5px 9px;border:1px solid #86efac;border-radius:7px;background:#fff;color:#15803d;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap}.batch-quote-refresh:hover{border-color:#22c55e;background:#f7fff9}.batch-quote-refresh:disabled{cursor:wait;opacity:.65}.batch-quote-table-wrap{max-height:250px;overflow:auto}
+.batch-quote-table{width:100%;min-width:640px;border-collapse:collapse;font-size:12px}.batch-quote-table th{position:sticky;top:0;z-index:1;padding:8px 10px;text-align:left;background:#f8fafc;color:#64748b}.batch-quote-table td{padding:8px 10px;border-top:1px solid #eef2f6;color:#334155}.batch-quote-table td:nth-child(3),.batch-quote-table td:nth-child(4){white-space:nowrap}
+.page-order-wide .form-group { margin-bottom:9px; }
+.page-order-wide .form-label { margin-bottom:5px; }
+.page-order-wide input:not([type="radio"]):not([type="checkbox"]):not([type="hidden"]),
+.page-order-wide select,
+.page-order-wide textarea { padding:8px 11px; }
+.page-order-wide textarea { min-height:52px; }
+.item-core-grid { display:grid; grid-template-columns:minmax(180px,1.15fr) minmax(135px,.66fr) minmax(210px,1.12fr) minmax(150px,.72fr); gap:10px; align-items:end; }
+.volume-trigger { width:100%; height:38px; border:1px solid var(--border); border-radius:8px; background:#fff; padding:0 11px; color:#94a3b8; text-align:left; font:inherit; cursor:pointer; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.volume-trigger.has-value { color:#1e293b; border-color:#93c5fd; }
+.field-invalid { border-color:#ef4444!important; box-shadow:0 0 0 2px rgba(239,68,68,.12)!important; }
+.sender-address-box.field-invalid,.service-picker-invalid { border:1px solid #ef4444!important; border-radius:9px; box-shadow:0 0 0 2px rgba(239,68,68,.10); }
+.service-picker-invalid { padding:10px; }
+.quote-missing-notice { margin:2px 0 10px; color:#dc2626; font-size:12px; line-height:1.55; }
+.quote-missing-notice.loading { color:#2563eb; }
+.quote-missing-notice.error { color:#dc2626; }
+.quote-missing-notice:empty { display:none; }
+.submit-feedback { order:-1; width:100%; max-height:100px; overflow:auto; padding:9px 12px; border:1px solid #fecaca; border-radius:8px; background:#fef2f2; color:#b91c1c; font-size:12px; line-height:1.5; white-space:pre-line; }
+.submit-feedback[hidden] { display:none; }
+.submit-feedback strong,.submit-feedback span { display:block; }
+.submit-feedback strong { margin-bottom:2px; font-size:13px; }
+.order-summary-bar { position:fixed; z-index:900; left:0; right:0; bottom:0; min-height:78px; display:grid; grid-template-columns:minmax(280px,1fr) minmax(190px,.55fr) minmax(300px,1fr); align-items:center; gap:22px; padding:10px max(28px,calc((100vw - 1360px)/2)); background:rgba(255,255,255,.98); border-top:1px solid #e2e8f0; box-shadow:0 -8px 28px rgba(15,23,42,.10); backdrop-filter:blur(8px); }
+.summary-fees { display:grid; gap:7px; }
+.summary-fees div,.summary-total { display:flex; align-items:baseline; gap:8px; white-space:nowrap; }
+.summary-fees span { min-width:88px; color:#475569; font-size:14px; }
+.summary-fees strong { min-width:54px; color:#1677ff; font-size:19px; text-align:right; }
+.summary-fees em,.summary-total em { color:#64748b; font-style:normal; font-size:13px; }
+.summary-total { justify-content:center; padding:7px 28px; border-left:1px solid #e2e8f0; border-right:1px solid #e2e8f0; }
+.summary-total span { color:#334155; font-size:15px; }
+.summary-total strong { color:#1677ff; font-size:28px; line-height:1; }
+.summary-action { display:flex; align-items:center; justify-content:flex-end; gap:10px 18px; flex-wrap:wrap; }
+.summary-action small { max-width:210px; color:#94a3b8; font-size:11px; line-height:1.45; text-align:right; }
+.summary-action .btn { min-width:142px; padding:14px 28px; font-size:16px; box-shadow:0 5px 16px rgba(22,119,255,.24); }
+.summary-buttons { display:flex; align-items:center; gap:10px; }
+.summary-buttons .btn { min-width:136px; }
+.btn-production { border:1px solid #ea580c; background:linear-gradient(135deg,#f97316,#ea580c); color:#fff; box-shadow:0 5px 16px rgba(234,88,12,.22) !important; }
+.btn-production:hover { background:linear-gradient(135deg,#ea580c,#c2410c); }
+.btn-production:disabled { opacity:.55; cursor:not-allowed; }
+.item-estimate-hint { margin:-2px 0 10px; font-size:12px; color:#64748b; }
+.parcel-count-control { position:relative; display:grid; grid-template-columns:1fr 34px; gap:8px; }
+.parcel-help { width:32px; height:32px; align-self:center; border:0; border-radius:50%; background:#2496ed; color:#fff; font-weight:700; font-size:17px; cursor:help; }
+.parcel-tooltip { display:none; position:absolute; z-index:30; right:0; bottom:50px; width:420px; max-width:80vw; padding:15px 18px; border-radius:8px; background:#fff; color:#334155; line-height:1.7; box-shadow:0 10px 35px rgba(15,23,42,.22); font-size:13px; }
+.parcel-tooltip::after { content:""; position:absolute; right:10px; bottom:-8px; border:8px solid transparent; border-top-color:#fff; border-bottom:0; }
+.parcel-help:hover + .parcel-tooltip,.parcel-help:focus + .parcel-tooltip { display:block; }
+.insurance-panel { border:1px solid #e2e8f0; border-radius:9px; background:#fff; padding:10px 13px; margin-bottom:10px; transition:border-color .18s ease,background .18s ease,box-shadow .18s ease; }
+.insurance-panel.selected { border-color:#93c5fd; background:#eff8ff; box-shadow:0 0 0 1px rgba(37,99,235,.08); }
+.insurance-panel.unavailable { background:#f8fafc; color:#94a3b8; }
+.insurance-toggle { display:flex; gap:11px; align-items:flex-start; cursor:pointer; }
+.insurance-toggle input { width:18px; height:18px; margin-top:2px; accent-color:#1677ff; }
+.insurance-toggle span,.insurance-toggle small { display:block; }
+.insurance-toggle small { color:#64748b; font-size:12px; margin-top:4px; }
+.insurance-fields { margin:10px 0 0 29px; max-width:440px; }
+.insurance-fields[hidden] { display:none; }
+.insurance-estimate { margin-top:7px; font-size:12px; color:#2563eb; }
+.volume-modal { position:fixed; inset:0; z-index:1200; display:flex; align-items:center; justify-content:center; padding:20px; }
+.volume-modal .modal-backdrop { position:absolute; inset:0; background:rgba(15,23,42,.48); }
+.volume-dialog { position:relative; width:min(780px,96vw); background:#fff; border-radius:8px; box-shadow:0 24px 70px rgba(15,23,42,.28); }
+.volume-dialog-head { display:flex; align-items:center; justify-content:space-between; padding:20px 34px; border-bottom:1px solid #e5e7eb; }
+.volume-dialog-head h3 { margin:0; font-size:20px; }
+.volume-dialog-head button { border:0; background:transparent; color:#8c8c8c; font-size:30px; cursor:pointer; }
+.volume-dialog-body { padding:36px; }
+.dimension-grid { display:grid; grid-template-columns:1fr 20px 1fr 20px 1fr; gap:12px; align-items:center; }
+.dimension-grid b { text-align:center; font-weight:400; }
+.dimension-grid label,.volume-total div { display:flex; align-items:center; border:1px solid #d9d9d9; border-radius:4px; overflow:hidden; }
+.dimension-grid input,.volume-total input { min-width:0; flex:1; border:0; outline:0; padding:13px 16px; font-size:16px; }
+.dimension-grid span,.volume-total em { padding:0 16px; color:#8c8c8c; font-style:normal; white-space:nowrap; }
+.volume-total { display:grid; grid-template-columns:180px 1fr; align-items:center; margin-top:22px; font-size:17px; }
+.volume-dialog-actions { display:flex; justify-content:flex-end; gap:12px; padding:16px 24px; border-top:1px solid #e5e7eb; }
+@media (max-width:780px) { .item-core-grid { grid-template-columns:1fr; gap:0; } .dimension-grid { grid-template-columns:1fr; } .dimension-grid b { display:none; } .volume-total { grid-template-columns:1fr; gap:8px; } }
+@media (max-width:680px) { .sf-city-guide { grid-template-columns:auto 1fr; }.sf-city-guide-action { grid-column:1/-1; justify-content:center; } }
+.party-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px; align-items:start; margin-bottom:10px; }
+.party-card { margin-bottom:0; min-width:0; }
+.party-card .form-grid-2 { grid-template-columns:minmax(120px,.85fr) minmax(170px,1.15fr); gap:10px; }
+.party-card .form-grid-3 { gap:10px; }
+.party-card .card-title { min-height:28px; display:flex; align-items:center; justify-content:space-between; gap:12px; border-bottom:1px solid var(--border); }
+.address-link { border:0; background:transparent; color:#1677ff; cursor:pointer; font:inherit; font-weight:500; padding:4px 0; }
+.address-link:hover { color:#0958d9; }
+.receiver-actions { display:flex; align-items:center; gap:14px; flex-wrap:wrap; justify-content:flex-end; }
+.sender-address-box { border:1px solid #d9dfe8; border-radius:8px; padding:8px 11px; display:grid; gap:5px; background:#fbfcfe; }
+.sender-address-box div { display:grid; grid-template-columns:76px 1fr; gap:10px; align-items:start; }
+.sender-address-box span { color:var(--muted); font-size:13px; }
+.sender-address-box strong { font-weight:500; overflow-wrap:anywhere; }
+.sender-address-picker-row { width:100%; border:0; background:transparent; display:flex; align-items:center; justify-content:space-between; color:#1677ff; padding:5px 0; font:inherit; font-weight:600; cursor:pointer; text-align:left; }
+.sender-address-picker-row span { color:#1677ff; font-size:14px; }
+.sender-address-picker-row b { font-size:24px; line-height:1; font-weight:400; }
+.sender-address-picker-row.custom-picker { border:1px solid #d9dfe8; border-radius:8px; padding:10px 14px; margin-bottom:16px; }
+.sender-address-box.empty .sender-address-detail { display:none; }
+.inline-address-parser { margin-top:4px; }
+.inline-address-parser-row { display:grid; grid-template-columns:1fr auto; gap:10px; align-items:stretch; }
+.inline-address-parser-row textarea { min-height:52px; }
+.inline-address-parser-row .btn { align-self:stretch; white-space:nowrap; }
+.save-address-option { display:flex; align-items:center; gap:9px; width:max-content; margin-top:8px; cursor:pointer; }
+.save-address-option input { width:18px; height:18px; accent-color:#1677ff; }
+.sender-address-modal { position:fixed; inset:0; z-index:1100; display:flex; align-items:center; justify-content:center; padding:24px; }
+.sender-address-modal .modal-backdrop { position:absolute; inset:0; background:rgba(15,23,42,.42); }
+.sender-address-dialog { position:relative; width:min(920px,96vw); max-height:86vh; overflow:auto; background:#fff; border-radius:14px; box-shadow:0 24px 80px rgba(15,23,42,.22); }
+.sender-address-dialog-head { display:flex; align-items:center; justify-content:space-between; padding:18px 24px; border-bottom:1px solid var(--border); }
+.sender-address-dialog-head h3 { font-size:20px; }
+.sender-address-close { border:0; background:transparent; font-size:30px; line-height:1; color:#64748b; cursor:pointer; }
+.sender-address-table { padding-bottom:8px; }
+.sender-address-table-head,.sender-address-option { display:grid; grid-template-columns:1fr 1.8fr 1.1fr; gap:22px; align-items:center; width:100%; padding:15px 28px; text-align:left; }
+.sender-address-table-head { color:#334155; font-weight:600; background:#f8fafc; }
+.sender-address-option { border:0; border-top:1px solid #eef1f5; background:#fff; color:#475569; font:inherit; line-height:1.7; cursor:pointer; }
+.sender-address-option:hover { background:#f8fbff; }
+.sender-address-option.selected { background:#f0f7ff; color:#1e3a5f; }
+.sender-address-option > span:first-child { color:#1f2937; font-weight:600; }
+.address-radio { display:inline-block; width:16px; height:16px; border:1px solid #cbd5e1; border-radius:50%; margin-right:12px; vertical-align:-3px; background:#fff; }
+.sender-address-option.selected .address-radio { border:5px solid #1677ff; }
+.courier-options { display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:12px }
+.courier-card { border:2px solid var(--border, #e5e7eb); border-radius:12px; padding:16px; cursor:pointer; transition:all .15s; text-align:center }
+.courier-card:hover { border-color:#667eea }
+.courier-card.selected { border-color:#667eea; background:linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%) }
+.courier-card .name { font-weight:600; font-size:15px }
+.courier-card .fee { font-size:12px; color:var(--muted, #94a3b8); margin-top:4px }
+.service-company + .service-company { margin-top:14px }
+.service-company-title { display:flex; align-items:center; gap:9px; font-weight:700; color:#1e293b; margin-bottom:10px }
+.carrier-avatar { width:28px; height:28px; border-radius:7px; object-fit:contain; background:#fff; border:1px solid #eef2f7; padding:3px; box-sizing:border-box; }
+.service-company-title small { color:#94a3b8; font-weight:400 }
+.svc-cards { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:10px }
+.svc-card { position:relative; border:2px solid var(--border, #e5e7eb); border-radius:9px; padding:11px; cursor:pointer; transition:all .15s }
+.svc-card:hover { border-color:#667eea }
+.svc-card.selected { border-color:#667eea; background:#f5f3ff; box-shadow:0 2px 8px rgba(102,126,234,.15) }
+.svc-card .svc-head { display:flex; justify-content:space-between; align-items:center }
+.svc-card .svc-name { font-weight:700; font-size:15px }
+.svc-card .svc-tag { font-size:12px; color:#64748b; margin-top:4px }
+.svc-card .svc-unavailable-note { margin-top:7px; padding:6px 8px; border-radius:6px; background:#fff7ed; color:#b45309; font-size:11px; font-weight:600; line-height:1.4; }
+.svc-card .svc-difference { font-size:12px; color:#475569; line-height:1.5; min-height:34px; margin-top:7px }
+.svc-card .svc-estimate { display:grid; grid-template-columns:1fr 1fr; gap:7px; margin-top:8px }
+.svc-card .svc-estimate div { background:#f8fafc; border-radius:7px; padding:6px 7px; font-size:11px; color:#64748b }
+.svc-card .svc-estimate strong { display:block; margin-top:2px; font-size:13px; color:#334155 }
+.svc-card .svc-quote-note { margin-top:8px; color:#94a3b8; font-size:11px; line-height:1.4 }
+.svc-card .svc-quote-note.warning { padding:6px 8px; border-radius:6px; background:#fff7ed; color:#b45309; font-weight:600; }
+.svc-recommended { background:#ecfdf5;color:#059669;padding:2px 7px;border-radius:10px;font-size:10px;white-space:nowrap }
+.recommendation-reason { border-left:3px solid #10b981; background:#f0fdf4; color:#166534; padding:9px 12px; margin-bottom:14px; font-size:12px; line-height:1.5 }
+.quote-explain { margin-top:10px; color:#94a3b8; font-size:11px; line-height:1.6 }
+.svc-empty { text-align:center; padding:14px; color:#94a3b8; font-size:13px }
+
+.api-request-inspector { margin-top:16px; border:1px solid #bfdbfe; border-radius:10px; background:#f8fbff; overflow:hidden; }
+.api-request-inspector > summary { padding:13px 15px; color:#1d4ed8; font-weight:600; cursor:pointer; user-select:none; }
+.api-inspector-body { border-top:1px solid #dbeafe; padding:14px; }
+.api-inspector-warning { color:#475569; font-size:12px; line-height:1.6; margin-bottom:10px; }
+.api-request-status { color:#64748b; font-size:12px; padding:9px 11px; border-radius:7px; background:#fff; }
+.api-request-status.error { color:#b91c1c; background:#fef2f2; }
+.api-request-tabs { display:flex; flex-wrap:wrap; gap:8px; margin:12px 0 8px; }
+.api-request-tabs button { border:1px solid #93c5fd; border-radius:6px; background:#fff; color:#2563eb; padding:7px 11px; cursor:pointer; }
+.api-request-tabs button.active { color:#fff; background:#2563eb; border-color:#2563eb; }
+.api-request-code { max-height:520px; overflow:auto; margin:0; padding:14px; border-radius:8px; background:#0f172a; color:#dbeafe; font:12px/1.65 Consolas,monospace; white-space:pre-wrap; word-break:break-word; }
+
+.service-picker-toolbar { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:9px; }
+#service-picker { margin-top:10px; }
+.service-card-title { display:flex; align-items:center; justify-content:space-between; gap:16px; }
+.quote-refresh-btn { border:1px solid #93c5fd; border-radius:7px; background:#fff; color:#1677ff; padding:7px 12px; cursor:pointer; font:inherit; font-size:12px; font-weight:500; }
+.quote-refresh-btn:hover { background:#eff6ff; }
+.quote-refresh-btn:disabled { cursor:wait; opacity:.65; }
+.service-picker-toolbar strong { color:#334155; font-size:14px; }
+.service-expand-btn { border:1px solid #93c5fd; border-radius:7px; background:#fff; color:#1677ff; padding:8px 14px; cursor:pointer; font:inherit; font-size:13px; }
+.service-expand-btn:hover { background:#eff6ff; }
+.service-company.disabled { opacity:.52; }
+.svc-card.disabled { background:#f1f5f9; border-color:#d1d5db; color:#94a3b8; cursor:not-allowed; box-shadow:none; }
+.svc-card.disabled .svc-estimate strong,.svc-card.disabled .svc-difference { color:#94a3b8; }
+.svc-card.disabled .svc-quote-note { color:#b45309; font-weight:600; }
+.cost-type-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-bottom:10px; }
+.cost-type-grid ~ div .search-select-input { background:#fff!important; }
+.cost-type-grid > label { cursor:pointer; }
+.cost-opt { border:2px solid var(--border, #e5e7eb); border-radius:9px; padding:10px 12px; text-align:center; transition:all .15s }
+.cost-opt:hover { border-color:#667eea }
+.cost-opt.selected { border-color:#667eea; background:linear-gradient(135deg,#f5f3ff,#ede9fe); box-shadow:0 2px 8px rgba(102,126,234,.15) }
+#batch-dropzone:hover { border-color:#10b981; background:#f0fdf4 }
+#batch-dropzone.drag-active { border-color:#10b981 !important; background:#ecfdf5; box-shadow:0 0 0 4px rgba(16,185,129,.10); }
+#batch-dropzone:focus-visible { outline:3px solid rgba(37,99,235,.28); outline-offset:3px; }
+@media (max-width: 980px) {
+  .party-grid { grid-template-columns:1fr; }
+  .item-core-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+@media (max-width: 720px) {
+  .sender-address-table-head { display:none; }
+  .sender-address-option { grid-template-columns:1fr; gap:5px; padding:16px 20px; }
+  .receiver-actions { gap:10px; }
+  .batch-entry-tip{grid-template-columns:40px minmax(0,1fr);padding:12px}.batch-entry-tip em{grid-column:2;padding-left:0}
+  .inline-address-parser-row { grid-template-columns:1fr; }
+  .page-order-wide { padding:12px 14px 168px; }
+  .item-core-grid { grid-template-columns:1fr; gap:0; }
+  .party-card .form-grid-2,.party-card .form-grid-3,.cost-type-grid { grid-template-columns:1fr; gap:0; }
+  .order-summary-bar { min-height:148px; grid-template-columns:1fr 1fr; gap:10px 16px; padding:12px 16px; }
+  .summary-total { border-right:0; padding:7px 12px; }
+  .summary-action { grid-column:1/-1; justify-content:space-between; flex-wrap:wrap; }
+  .summary-action small { text-align:left; }
+  .submit-feedback { order:-1; width:100%; max-width:none; }
+  .summary-buttons { width:100%; }
+  .summary-buttons .btn { flex:1; min-width:0; padding:12px 10px; font-size:14px; }
+}
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/address-selector.js?v=20261106b"></script>
+<script>
+const COURIER_INFO = { SF: { name: "顺丰速运" }, DB: { name: "德邦快递" }, JDL: { name: "京东物流" } };
+const SELECTED_REGION = {{ region_code|tojson }};
+let DEFAULT_RECOMMENDED_SERVICE_ID = null;
+let DEFAULT_RECOMMENDED_SERVICE_NAME = "";
+const CURRENT_USER_DEPARTMENT = {{ (current_user_department or '')|tojson }};
+let ALL_SERVICES = [];
+let QUOTE_STATE = {items: [], recommended_id: null, recommendation_reason: ""};
+let currentCourier = "";
+let currentServiceId = null;
+let serviceManuallySelected = false;
+let showAllServices = false;
+let quoteRequestToken = 0;
+let quoteRefreshTimer = null;
+let quoteLoading = false;
+let quoteError = "";
+let quoteAbortControllers = [];
+let quoteLoadingCarriers = new Set();
+const apiDebugEnabled = new URLSearchParams(location.search).get("api_debug") === "1";
+let apiPreviewTimer = null;
+let apiPreviewRequests = [];
+let activeApiPreviewKey = "quote";
+const RESUBMIT_ORDER = {{ resubmit_order|tojson }};
+let resubmitServiceId = null;
+
+const FORM_FIELD_LABELS = {
+  sender_name: "寄件人姓名", sender_phone: "寄件人手机号",
+  sender_province: "寄件省份", sender_city: "寄件城市", sender_district: "寄件区县",
+  sender_address: "寄件详细地址", receiver_name: "收件人姓名",
+  receiver_phone: "收件人手机号", receiver_province: "收件省份",
+  receiver_city: "收件城市", receiver_district: "收件区县",
+  receiver_address: "收件详细地址", shipping_reason: "寄件原因",
+  item_name: "物品类型", item_weight: "预估重量", parcel_count: "包裹数量",
+  insurance_amount: "物品声明价值", dept_name: "费用归属部门",
+  project_name: "费用归属项目", express_type: "快递产品",
+  pickup_time: "预约上门时间"
+};
+
+function formElement(name) {
+  return document.getElementById("order-form")?.elements?.[name] || null;
+}
+
+function validationTarget(name) {
+  if (name === "sender_address_selection") return document.getElementById("sender-address-summary");
+  if (name === "express_type") return document.getElementById("service-picker");
+  if (name === "pickup_time") return document.getElementById("pickup-slot-panel");
+  const selectMap = {item_name: "item_name", dept_name: "dept-select", project_name: "project-select"};
+  const source = selectMap[name] ? document.getElementById(selectMap[name]) : formElement(name);
+  if (source?.matches?.("select[data-searchable]")) {
+    return source.closest(".search-select")?.querySelector(".search-select-input") || source;
+  }
+  return source;
+}
+
+function requiredFormChecks() {
+  const f = document.getElementById("order-form");
+  if (!f) return [];
+  const checks = [];
+  const add = (name, valid, reason, target = validationTarget(name), className = "field-invalid") => {
+    checks.push({name, valid:Boolean(valid), reason, target, className});
+  };
+  const value = name => String(f.elements[name]?.value || "").trim();
+  add("sender_name", value("sender_name"), FORM_FIELD_LABELS.sender_name);
+  const senderPhone = value("sender_phone");
+  add("sender_phone", senderPhone, FORM_FIELD_LABELS.sender_phone);
+
+  const customSender = document.getElementById("sender-custom-fields")?.style.display !== "none";
+  if (customSender) {
+    ["sender_province", "sender_city", "sender_district", "sender_address"].forEach(name =>
+      add(name, value(name), FORM_FIELD_LABELS[name]));
+  } else {
+    const senderComplete = ["sender_province", "sender_city", "sender_district", "sender_address"].every(name => value(name));
+    add("sender_address_selection", senderComplete, "企业寄件地址", validationTarget("sender_address_selection"));
+  }
+
+  const isBatch = typeof batchModeActive !== "undefined" && batchModeActive;
+  if (!isBatch) {
+    add("receiver_name", value("receiver_name"), FORM_FIELD_LABELS.receiver_name);
+    const receiverPhone = value("receiver_phone");
+    add("receiver_phone", receiverPhone, FORM_FIELD_LABELS.receiver_phone);
+    ["receiver_province", "receiver_city", "receiver_district", "receiver_address"].forEach(name =>
+      add(name, value(name), FORM_FIELD_LABELS[name]));
+  }
+
+  add("shipping_reason", value("shipping_reason"), FORM_FIELD_LABELS.shipping_reason);
+  add("item_name", value("item_name"), FORM_FIELD_LABELS.item_name);
+  const weight = Number(value("item_weight"));
+  add("item_weight", Number.isFinite(weight) && weight > 0, FORM_FIELD_LABELS.item_weight);
+  const parcels = Number(value("parcel_count"));
+  add("parcel_count", Number.isInteger(parcels) && parcels >= 1 && parcels <= 307, FORM_FIELD_LABELS.parcel_count);
+
+  const costType = document.querySelector('input[name="cost_type"]:checked')?.value || "department";
+  add("dept_name", Boolean(document.getElementById("dept_name_input")?.value), FORM_FIELD_LABELS.dept_name);
+  if (costType === "project") {
+    add("project_name", Boolean(document.getElementById("project_name_input")?.value), FORM_FIELD_LABELS.project_name);
+  }
+
+  add("express_type", Boolean(currentServiceId && document.getElementById("express_type")?.value),
+    FORM_FIELD_LABELS.express_type, validationTarget("express_type"), "service-picker-invalid");
+
+  if (document.getElementById("insurance-enabled")?.checked) {
+    const insurance = Number(document.getElementById("insurance-amount")?.value);
+    add("insurance_amount", Number.isFinite(insurance) && insurance > 0, FORM_FIELD_LABELS.insurance_amount);
+  }
+  if (document.getElementById("pickup-time-mode")?.value === "appointment") {
+    const pickupComplete = Boolean(document.getElementById("pickup-start-time")?.value
+      && document.getElementById("pickup-end-time")?.value);
+    add("pickup_time", pickupComplete, FORM_FIELD_LABELS.pickup_time);
+  }
+  return checks;
+}
+
+function refreshRequiredValidation(report = false) {
+  const checks = requiredFormChecks();
+  checks.forEach(check => {
+    if (!check.target) return;
+    check.target.classList.toggle(check.className, !check.valid);
+    check.target.setAttribute("aria-invalid", check.valid ? "false" : "true");
+  });
+  const invalid = checks.filter(check => !check.valid);
+  if (report && invalid.length) {
+    const reasons = [...new Set(invalid.map(check => check.reason))];
+    showSubmitError("信息不完整", "请补充或修正以下内容：\n• " + reasons.join("\n• "));
+    const first = invalid.find(check => check.target && typeof check.target.focus === "function");
+    first?.target?.scrollIntoView?.({behavior:"smooth", block:"center"});
+    first?.target?.focus?.({preventScroll:true});
+  }
+  return {ok:invalid.length === 0, invalid};
+}
+
+function quoteMissingFields() {
+  const f = document.getElementById("order-form");
+  if (!f) return [];
+  const entries = [
+    ["sender_province", "寄件省份"], ["sender_city", "寄件城市"],
+    ["sender_district", "寄件区县"], ["sender_address", "寄件详细地址"]
+  ];
+  if (!batchModeActive) entries.push(
+    ["receiver_province", "收件省份"], ["receiver_city", "收件城市"],
+    ["receiver_district", "收件区县"], ["receiver_address", "收件详细地址"]
+  );
+  const missing = entries.filter(([name]) => !String(f.elements[name]?.value || "").trim()).map(([,label]) => label);
+  return missing;
+}
+
+function updateQuoteMissingNotice() {
+  const notice = document.getElementById("quote-missing-notice");
+  if (!notice) return;
+  if (batchModeActive) {
+    notice.classList.remove("loading", "error");
+    notice.textContent = "";
+    return;
+  }
+  const missing = quoteMissingFields();
+  notice.classList.toggle("loading", !missing.length && quoteLoading);
+  notice.classList.toggle("error", Boolean(missing.length || quoteError));
+  if (missing.length) {
+    notice.textContent = "暂未显示运费和时效，还需填写：" + missing.join("、");
+  } else if (quoteLoading) {
+    notice.textContent = "正在根据当前收寄地址查询运费和时效，请稍候…";
+  } else if (quoteError) {
+    notice.textContent = "运费和时效查询失败：" + quoteError + "。请点击“刷新运费和时效”重试。";
+  } else {
+    notice.textContent = "";
+  }
+}
+
+function bindPhoneLengthLimit(name) {
+  const input = formElement(name);
+  if (!input || input.dataset.phoneBound === "1") return;
+  input.dataset.phoneBound = "1";
+  input.removeAttribute("minlength");
+  input.removeAttribute("maxlength");
+  input.removeAttribute("pattern");
+  input.inputMode = "tel";
+}
+
+function clearSubmitError() {
+  const box = document.getElementById("submit-feedback");
+  if (box) box.hidden = true;
+}
+
+function showSubmitError(title, detail) {
+  const box = document.getElementById("submit-feedback");
+  const message = formatApiError(detail);
+  if (!box) {
+    alert(title + "：\n" + message);
+    return;
+  }
+  document.getElementById("submit-feedback-title").textContent = title;
+  document.getElementById("submit-feedback-message").textContent = message;
+  box.hidden = false;
+}
+
+async function readResponsePayload(response) {
+  const raw = await response.text();
+  if (!raw) return {};
+  try {
+    return JSON.parse(raw);
+  } catch (_) {
+    return {detail:"服务器返回内容无法识别（HTTP " + response.status + "），请联系管理员检查服务日志"};
+  }
+}
+
+(async function init() {
+  await loadServices();
+  await loadDeptsAndProjects();
+  if (RESUBMIT_ORDER) await prefillResubmissionOrder(RESUBMIT_ORDER);
+  await refreshServiceQuotes(false);
+  renderServiceList();
+  if (resubmitServiceId) selectService(resubmitServiceId, true);
+  // 自动读 sessionStorage 里的用户 id (钉钉登录后写入)
+  var uid = sessionStorage.getItem("userId") || "";
+  document.getElementById("created_by").value = uid;
+  document.getElementById("dept-select")?.addEventListener("change", onDeptChange);
+  document.getElementById("project-select")?.addEventListener("change", onProjectChange);
+})();
+
+async function prefillResubmissionOrder(order) {
+  const f = document.getElementById("order-form");
+  const directFields = [
+    "sender_name", "sender_phone", "sender_company", "sender_province", "sender_city",
+    "sender_district", "sender_address", "receiver_name", "receiver_phone",
+    "receiver_company", "receiver_address", "shipping_reason", "item_name",
+    "item_weight", "item_volume", "parcel_count", "item_count", "item_remark"
+  ];
+  directFields.forEach(name => {
+    if (f.elements[name] && order[name] !== null && order[name] !== undefined) {
+      f.elements[name].value = order[name];
+    }
+  });
+
+  await window.addressSelectorReady;
+  await setAddressSelection(
+    "receiver", order.receiver_province || "", order.receiver_city || "",
+    order.receiver_district || ""
+  );
+
+  const senderMatch = Object.entries(SENDER_ADDRESSES).find(([, address]) =>
+    ["province", "city", "district", "detail"].every(key =>
+      String(address[key] || "") === String(order[key === "detail" ? "sender_address" : `sender_${key}`] || "")
+    )
+  );
+  if (senderMatch) {
+    selectSenderAddress(senderMatch[0]);
+    f.elements.sender_name.value = order.sender_name || "";
+    f.elements.sender_phone.value = order.sender_phone || "";
+  } else {
+    const summary = document.getElementById("sender-address-summary");
+    document.getElementById("sender-address-name").textContent = "原订单寄件地址";
+    document.getElementById("sender-company-preview").textContent = order.sender_company || "—";
+    document.getElementById("sender-region-preview").textContent =
+      [order.sender_province, order.sender_city, order.sender_district].filter(Boolean).join(" / ");
+    document.getElementById("sender-detail-preview").textContent = order.sender_address || "";
+    summary.style.display = "grid";
+    summary.classList.remove("empty");
+  }
+
+  const itemSelect = document.getElementById("item_name");
+  if (order.item_name && ![...itemSelect.options].some(option => option.value === order.item_name)) {
+    itemSelect.add(new Option(order.item_name, order.item_name));
+  }
+  itemSelect.value = order.item_name || "";
+  window.refreshSearchableSelect?.(itemSelect);
+
+  if (Number(order.insurance_amount || 0) > 0) {
+    document.getElementById("insurance-enabled").checked = true;
+    toggleInsurance();
+    document.getElementById("insurance-amount").value = order.insurance_amount;
+  }
+
+  const costType = order.cost_type === "project" ? "project" : "department";
+  const costRadio = document.querySelector(`input[name="cost_type"][value="${costType}"]`);
+  if (costRadio) costRadio.checked = true;
+  onCostType();
+  const selectExisting = (id, code, name) => {
+    const select = document.getElementById(id);
+    let option = [...select.options].find(item =>
+      (code && String(item.dataset.code || item.value) === String(code))
+      || (name && String(item.dataset.name || "") === String(name))
+    );
+    if (!option && name) {
+      option = new Option(name, code || "__original__");
+      option.dataset.code = code || "";
+      option.dataset.name = name;
+      select.add(option);
+    }
+    if (option) select.value = option.value;
+    window.refreshSearchableSelect?.(select);
+  };
+  selectExisting("dept-select", order.dept_code, order.dept_name);
+  onDeptChange();
+  if (costType === "project") {
+    selectExisting("project-select", order.project_code, order.project_name);
+    onProjectChange();
+    // 项目只负责提供 CRM 建议部门；重新提交时仍以该订单保存的部门为准。
+    selectExisting("dept-select", order.dept_code, order.dept_name);
+    onDeptChange();
+  }
+
+  resubmitServiceId = ALL_SERVICES.find(service =>
+    service.courier === order.courier_type && service.express_type === order.express_type
+  )?.id || null;
+  selectImmediatePickup(false);
+  refreshRequiredValidation();
+  updateQuoteMissingNotice();
+}
+
+async function loadDeptsAndProjects() {
+  try {
+    const [dr, pr] = await Promise.all([
+      fetch('/api/departments').then(r => r.ok ? r.json() : []).catch(() => []),
+      fetch('/api/projects?sort=recent').then(r => r.ok ? r.json() : []).catch(() => [])
+    ]);
+    const depts = Array.isArray(dr) ? dr : (dr.departments || dr.items || []);
+    const projs = Array.isArray(pr) ? pr : (pr.projects || pr.items || []);
+    const ds = document.getElementById('dept-select');
+    const ps = document.getElementById('project-select');
+    if (ds) {
+      ds.replaceChildren(new Option('请选择部门', ''));
+      depts.forEach(d => {
+        const code=String(d.code || d.dept_code || d.id || '');
+        const name=String(d.name || d.full_name || d.dept_name || d.title || '');
+        const option=new Option(name,code); option.dataset.code=code; option.dataset.name=name;
+        ds.add(option);
+      });
+      const normalize=value=>String(value||'').replace(/[\\/]/g,'-').replace(/\s+/g,'').replace(/^-+|-+$/g,'');
+      let selected=[...ds.options].find(option=>normalize(option.dataset.name)===normalize(CURRENT_USER_DEPARTMENT));
+      if (!selected && CURRENT_USER_DEPARTMENT) {
+        selected=new Option(CURRENT_USER_DEPARTMENT,'__current_department__');
+        selected.dataset.code=''; selected.dataset.name=CURRENT_USER_DEPARTMENT; ds.add(selected);
+      }
+      if (selected) ds.value=selected.value;
+      onDeptChange();
+      window.refreshSearchableSelect?.(ds);
+    }
+    if (ps) {
+      ps.replaceChildren(new Option('请选择项目', ''));
+      projs.forEach(p => {
+        const code=String(p.code || p.project_code || p.id || '');
+        const name=String(p.full_path || p.name || p.project_name || p.title || '');
+        const deptCode=String(p.dept_code || '');
+        const deptName=String(p.dept_name || '');
+        const option=new Option(name,code); option.dataset.code=code; option.dataset.name=name;
+        option.dataset.deptCode=deptCode; option.dataset.deptName=deptName;
+        ps.add(option);
+      });
+      onProjectChange();
+      window.refreshSearchableSelect?.(ps);
+    }
+  } catch (e) { console.warn('loadDeptsAndProjects skipped:', e); }
+}
+
+async function loadServices() {
+  try {
+    const r = await fetch("/api/services?region=" + encodeURIComponent(SELECTED_REGION));
+    const data = await r.json();
+    ALL_SERVICES = data.items || [];
+    DEFAULT_RECOMMENDED_SERVICE_ID = data.default_service_id || null;
+    DEFAULT_RECOMMENDED_SERVICE_NAME = data.default_service_name || "";
+  } catch(e) {
+    ALL_SERVICES = [];
+    DEFAULT_RECOMMENDED_SERVICE_ID = null;
+    DEFAULT_RECOMMENDED_SERVICE_NAME = "";
+  }
+}
+
+function renderServiceList() {
+  const picker = document.getElementById("service-picker");
+  if (!ALL_SERVICES.length) {
+    picker.innerHTML = '<div class="svc-empty">当前区域尚未配置可用快递服务，请联系管理员。</div>';
+    document.getElementById("express_type").value = "";
+    document.getElementById("express_type_name").value = "";
+    return;
+  }
+  const multiParcel = getParcelCount() > 1;
+  const quoteMap = Object.fromEntries((QUOTE_STATE.items || []).map(x => [x.id, x]));
+  const isSelectable = sid => {
+    const service = ALL_SERVICES.find(s => s.id === sid);
+    return Boolean(service && quoteMap[sid]?.quote_available === true
+      && !(multiParcel && !["SF", "JDL"].includes(service.courier)));
+  };
+  const isCompleteQuote = sid => {
+    const quote = quoteMap[sid] || {};
+    return isSelectable(sid) && quote.quote_deferred !== true
+      && quote.estimated_fee != null && Boolean(quote.estimated_delivery);
+  };
+  let selectedId = serviceManuallySelected && isSelectable(currentServiceId)
+    ? currentServiceId
+    : (isSelectable(QUOTE_STATE.recommended_id) ? QUOTE_STATE.recommended_id : null);
+  if (!selectedId) {
+    selectedId = ALL_SERVICES.find(s => isCompleteQuote(s.id))?.id
+      || (!quoteLoading ? ALL_SERVICES.find(s => isSelectable(s.id))?.id : null)
+      || null;
+    serviceManuallySelected = false;
+  }
+  let toolbarTitle = serviceManuallySelected ? '当前选择'
+    : (DEFAULT_RECOMMENDED_SERVICE_ID && selectedId === DEFAULT_RECOMMENDED_SERVICE_ID ? '系统默认' : '暂无可选产品');
+  let html = '<div class="service-picker-toolbar"><strong>' + toolbarTitle
+    + '</strong><button type="button" class="service-expand-btn" onclick="toggleAllServices()">'
+    + (showAllServices ? '收起全部产品⌃' : '查看全部快递产品⌄') + '</button></div>';
+  if (DEFAULT_RECOMMENDED_SERVICE_NAME) {
+    html += '<div class="recommendation-reason"><b>系统默认推荐：</b>'
+      + batchEsc(DEFAULT_RECOMMENDED_SERVICE_NAME)
+      + '。您也可以展开列表，自行选择其他快递产品。</div>';
+  }
+  [["SF", "顺丰速运", "/static/sf-logo.svg"], ["DB", "德邦快递", "/static/deppon-logo.svg"], ["JDL", "京东物流", "/static/jdl-logo.svg"]].forEach(group => {
+    const services = ALL_SERVICES.filter(s => s.courier === group[0]
+      && (showAllServices || !selectedId || s.id === selectedId));
+    if (!services.length) return;
+    const groupDisabled = multiParcel && !["SF", "JDL"].includes(group[0]);
+    const capabilityText = groupDisabled ? '多包裹下单暂不支持'
+      : (group[0] === 'JDL' ? '支持保价 · 支持多包裹'
+        : (showAllServices ? services.length + '种产品' : '当前产品'));
+    html += '<section class="service-company' + (groupDisabled ? ' disabled' : '') + '"><div class="service-company-title">'
+      + '<img class="carrier-avatar" src="' + group[2] + '" alt="">' + group[1] + '<small>'
+      + capabilityText
+      + '</small></div><div class="svc-cards">';
+    services.forEach(s => {
+      const quote = quoteMap[s.id] || {};
+      const unavailable = quote.quote_available !== true;
+      const deferred = quote.quote_deferred === true;
+      const cardDisabled = groupDisabled || unavailable;
+      const recHtml = s.id === DEFAULT_RECOMMENDED_SERVICE_ID ? '<span class="svc-recommended">默认</span>' : '';
+      const waitingForAddress = String(quote.quote_note || '').includes('请完整填写');
+      const quoteIsLoading = quoteLoadingCarriers.has(s.courier) && quoteMissingFields().length === 0;
+      const unavailableHtml = unavailable && !waitingForAddress && !quoteIsLoading
+        ? '<div class="svc-unavailable-note">' + batchEsc(quote.quote_note || '当前路线不支持该快递产品') + '</div>' : '';
+      const isJdl = s.courier === 'JDL';
+      const fee = quoteIsLoading ? '查询中…' : (deferred ? '以月结账单为准' : (quote.estimated_fee == null
+        ? (isJdl && quote.quote_available ? '月结计费' : (waitingForAddress ? '填写地址后获取' : '无法获取'))
+        : '¥' + Number(quote.estimated_fee).toFixed(2)));
+      const fallbackEta = isJdl && quote.quote_available
+        ? '以京东受理为准' : (waitingForAddress ? '填写地址后获取' : '无法获取');
+      const eta = quoteIsLoading ? '查询中…'
+        : (deferred ? '以承运商受理为准' : (quote.estimated_delivery || fallbackEta));
+      const quoteFooter = groupDisabled ? '包裹数恢复为1后可选择'
+        : (quoteIsLoading ? '正在实时查询运费和时效' : (unavailable && !waitingForAddress ? '' : (quote.quote_note || '正在准备线路试算')));
+      const quoteFooterClass = String(quote.quote_note || '').includes('未提供承诺送达时间') ? ' warning' : '';
+      html += '<div class="svc-card' + (cardDisabled ? ' disabled' : '') + '" data-sid="' + s.id + '"'
+        + (cardDisabled ? ' aria-disabled="true"' : ' onclick="selectService(\'' + s.id + '\')"') + '>'
+        + '<div class="svc-head"><span class="svc-name">' + batchEsc(s.name) + '</span>' + recHtml + '</div>'
+        + '<div class="svc-tag">' + batchEsc(s.tagline) + '</div>' + unavailableHtml + '<div class="svc-difference">' + batchEsc(s.difference) + '</div>'
+        + '<div class="svc-estimate"><div>预估费用<strong>' + batchEsc(fee) + '</strong></div><div>预计送达<strong>' + batchEsc(eta) + '</strong></div></div>'
+        + (quoteFooter ? '<div class="svc-quote-note' + quoteFooterClass + '">' + batchEsc(quoteFooter) + '</div>' : '') + '</div>';
+    });
+    html += '</div></section>';
+  });
+  picker.innerHTML = html;
+  if (selectedId) selectService(selectedId, false);
+  else clearServiceSelection();
+}
+
+function toggleAllServices() {
+  showAllServices = !showAllServices;
+  renderServiceList();
+}
+
+function selectService(sid, manual = true) {
+  const s = ALL_SERVICES.find(x => x.id === sid);
+  const quote = (QUOTE_STATE.items || []).find(item => item.id === sid);
+  if (!s || quote?.quote_available !== true
+      || (getParcelCount() > 1 && !["SF", "JDL"].includes(s.courier))) return;
+  currentServiceId = sid;
+  if (manual) {
+    serviceManuallySelected = true;
+    showAllServices = false;
+  }
+  currentCourier = s.courier;
+  document.getElementById("courier_type").value = s.courier;
+  document.querySelectorAll(".svc-card").forEach(c => c.classList.remove("selected"));
+  const card = document.querySelector('.svc-card[data-sid="' + sid + '"]');
+  if (card) card.classList.add("selected");
+  document.getElementById("express_type").value = s.express_type;
+  document.getElementById("express_type_name").value = s.name;
+  updateCarrierRequirements();
+  updateInsuranceEstimate();
+  updateOrderSummary();
+  refreshRequiredValidation();
+  if (manual) {
+    renderServiceList();
+    scheduleBatchQuoteRefresh();
+  }
+}
+
+function clearServiceSelection() {
+  currentServiceId = null;
+  serviceManuallySelected = false;
+  document.querySelectorAll(".svc-card").forEach(c => c.classList.remove("selected"));
+  document.getElementById("courier_type").value = "";
+  document.getElementById("express_type").value = "";
+  document.getElementById("express_type_name").value = "";
+  currentCourier = "";
+  syncInsuranceAvailability();
+  updateOrderSummary();
+  refreshRequiredValidation();
+}
+
+function updateCarrierRequirements() {
+  const trigger = document.getElementById("item-volume-trigger");
+  const input = document.getElementById("item-volume");
+  if (trigger && !input?.value) {
+    trigger.textContent = "选填；填写后预估费用更准确";
+  }
+  trigger?.classList.remove("required");
+  syncInsuranceAvailability();
+}
+
+function buildQuoteContext() {
+  const f = document.getElementById("order-form");
+  const enteredWeight = parseFloat(f.elements.item_weight?.value || "");
+  const assumedWeight = !(Number.isFinite(enteredWeight) && enteredWeight > 0);
+  return {
+    assumedWeight,
+    body: {
+      sender_province: f.elements.sender_province?.value || "",
+      sender_city: f.elements.sender_city?.value || "",
+      sender_district: f.elements.sender_district?.value || "",
+      sender_address: f.elements.sender_address?.value || "",
+      receiver_province: f.elements.receiver_province?.value || "",
+      receiver_city: f.elements.receiver_city?.value || "",
+      receiver_district: f.elements.receiver_district?.value || "",
+      receiver_address: f.elements.receiver_address?.value || "",
+      item_type: f.elements.item_name?.value || "",
+      weight: assumedWeight ? 1 : enteredWeight,
+      volume: parseFloat(f.elements.item_volume?.value) || null,
+      parcel_count: getParcelCount(),
+      insurance_amount: document.getElementById("insurance-enabled")?.checked
+        ? (parseFloat(document.getElementById("insurance-amount")?.value || "0") || 0) : 0,
+      pickup_start_time: f.elements.pickup_start_time?.value || null,
+      pickup_end_time: f.elements.pickup_end_time?.value || null,
+      same_day_required: false,
+    },
+  };
+}
+
+function recomputeGlobalRecommendation() {
+  QUOTE_STATE.recommended_id = DEFAULT_RECOMMENDED_SERVICE_ID;
+  QUOTE_STATE.recommendation_reason = DEFAULT_RECOMMENDED_SERVICE_NAME
+    ? `系统默认推荐${DEFAULT_RECOMMENDED_SERVICE_NAME}，您也可以自行选择其他快递产品。`
+    : "";
+}
+
+async function refreshServiceQuotes(rerender = true, force = false) {
+  if (batchModeActive) {
+    updateQuoteMissingNotice();
+    return false;
+  }
+  const token = ++quoteRequestToken;
+  const f = document.getElementById("order-form");
+  const missing = quoteMissingFields();
+  quoteAbortControllers.forEach(controller => controller.abort());
+  quoteAbortControllers = [];
+  quoteError = "";
+  quoteLoadingCarriers = new Set();
+  quoteLoading = false;
+  if (missing.length) {
+    QUOTE_STATE = {
+      items: ALL_SERVICES.map(service => ({
+        id: service.id,
+        estimated_fee: null,
+        estimated_delivery: null,
+        quote_available: true,
+        quote_deferred: true,
+        quote_note: "收寄地址完整后自动查询；当前可先选择产品",
+      })),
+      recommended_id: null,
+      recommendation_reason: "",
+    };
+    recomputeGlobalRecommendation();
+    updateQuoteMissingNotice();
+    if (rerender) renderServiceList();
+    return false;
+  }
+
+  const carriers = [...new Set(ALL_SERVICES.map(service => service.courier))];
+  quoteLoadingCarriers = new Set(carriers);
+  quoteLoading = carriers.length > 0;
+  // All configured services start selectable. Only an explicit carrier
+  // rejection may disable one after the live route query completes.
+  QUOTE_STATE = {
+    items: ALL_SERVICES.map(service => ({
+      id: service.id,
+      estimated_fee: null,
+      estimated_delivery: null,
+      quote_available: true,
+      quote_deferred: true,
+      quote_note: "正在后台查询费用和时效；当前可先选择，提交时会再次校验",
+    })),
+    recommended_id: null,
+    recommendation_reason: "",
+  };
+  updateQuoteMissingNotice();
+  if (quoteLoading && rerender) renderServiceList();
+
+  const {body, assumedWeight} = buildQuoteContext();
+  const errors = {};
+  let successCount = 0;
+
+  function mergeCarrierResult(carrier, result) {
+    const carrierIds = new Set(
+      ALL_SERVICES.filter(service => service.courier === carrier).map(service => service.id)
+    );
+    const retained = (QUOTE_STATE.items || []).filter(item => !carrierIds.has(item.id));
+    const receivedItems = (result.items || []).map(item => assumedWeight ? {
+      ...item,
+      quote_assumed_weight: true,
+      quote_note: `按1kg进行线路初查；填写实际重量后会自动更新。${item.quote_note || ""}`,
+    } : item);
+    QUOTE_STATE.items = retained.concat(receivedItems);
+    QUOTE_STATE.requirements = {...(QUOTE_STATE.requirements || {}), ...(result.requirements || {})};
+    recomputeGlobalRecommendation();
+  }
+
+  async function fetchCarrier(carrier) {
+    const controller = new AbortController();
+    quoteAbortControllers.push(controller);
+    try {
+      const response = await fetch(
+        "/api/courier/quotes?region=" + encodeURIComponent(SELECTED_REGION)
+          + "&carrier=" + encodeURIComponent(carrier)
+          + (force ? "&force=true" : ""),
+        {
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body:JSON.stringify(body),
+          signal:controller.signal
+        }
+      );
+      const result = await readResponsePayload(response);
+      if (!response.ok) throw new Error(formatApiError(result.detail || result.message || "接口未返回成功"));
+      if (token !== quoteRequestToken) return;
+      mergeCarrierResult(carrier, result);
+      successCount += 1;
+    } catch (error) {
+      if (token !== quoteRequestToken) return;
+      if (error?.name !== "AbortError") {
+        errors[carrier] = error?.message || "网络请求异常";
+      }
+      console.warn("quote unavailable", carrier, error);
+    } finally {
+      if (token !== quoteRequestToken) return;
+      quoteLoadingCarriers.delete(carrier);
+      quoteLoading = quoteLoadingCarriers.size > 0;
+      recomputeGlobalRecommendation();
+      quoteError = Object.entries(errors)
+        .map(([key, value]) => (COURIER_INFO[key]?.name || key) + "：" + value)
+        .join("；");
+      updateQuoteMissingNotice();
+      if (rerender) {
+        renderServiceList();
+        updateOrderSummary();
+      }
+    }
+  }
+
+  await Promise.allSettled(carriers.map(fetchCarrier));
+  if (token === quoteRequestToken) quoteAbortControllers = [];
+  return successCount > 0;
+}
+
+function scheduleServiceQuotes() {
+  clearTimeout(quoteRefreshTimer);
+  quoteRefreshTimer = setTimeout(() => refreshServiceQuotes(), 500);
+}
+
+async function doParseAddress(prefix, button) {
+  const text = document.getElementById(prefix + "-parse-input").value.trim();
+  if (!text) { alert("请先粘贴文字"); return; }
+  button.disabled = true; button.textContent = "识别中...";
+  try {
+    const r = await fetch("/api/parse-recipient", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({text}) });
+    const j = await r.json();
+    if (!j.success) { alert("未能识别有效信息"); return; }
+    await fillParseResult(prefix, j);
+  } catch(e) { alert("识别失败: " + e); }
+  finally { button.disabled = false; button.textContent = "智能识别"; }
+}
+async function fillParseResult(prefix, j) {
+  const f = document.getElementById("order-form");
+  if (j.name) f.elements[prefix + "_name"].value = j.name;
+  if (j.phone) f.elements[prefix + "_phone"].value = j.phone;
+  await setAddressSelection(prefix, j.province, j.city, j.district);
+  if (j.address) f.elements[prefix + "_address"].value = j.address;
+  const missing = [];
+  if (!j.name) missing.push("姓名"); if (!j.phone) missing.push("手机号");
+  if (!j.province) missing.push("省"); if (!j.city) missing.push("市"); if (!j.address) missing.push("详细地址");
+  const roleName = prefix === "sender" ? "寄件人" : "收件人";
+  let msg = "✨ " + roleName + "识别成功！置信度 " + (j.confidence * 100) + "%";
+  if (missing.length) msg += "\\n\\n以下字段未能识别，请手动补充: " + missing.join("、");
+  showToast(msg, missing.length > 0 ? "warn" : "ok");
+  refreshRequiredValidation();
+  updateQuoteMissingNotice();
+  scheduleServiceQuotes();
+}
+function showToast(msg, type) {
+  const el = document.createElement("div"); el.textContent = msg;
+  el.style.cssText = "position:fixed;top:24px;left:50%;transform:translateX(-50%);padding:12px 24px;border-radius:10px;background:" + (type==="ok"?"#22c55e":"#f59e0b") + ";color:#fff;box-shadow:0 8px 24px rgba(0,0,0,.18);z-index:999;font-size:14px;max-width:80%;text-align:center;white-space:pre-line";
+  document.body.appendChild(el); setTimeout(() => el.remove(), 3000);
+}
+
+function formatApiError(detail) {
+  const fieldNames = {
+    created_by: "当前用户", courier_type: "快递公司", express_type: "快递产品",
+    sender_name: "寄件人姓名", sender_phone: "寄件人手机号",
+    sender_province: "寄件省份", sender_city: "寄件城市", sender_district: "寄件区县",
+    sender_address: "寄件详细地址", receiver_name: "收件人姓名",
+    receiver_phone: "收件人手机号", receiver_province: "收件省份",
+    receiver_city: "收件城市", receiver_district: "收件区县",
+    receiver_address: "收件详细地址", shipping_reason: "寄件原因",
+    item_name: "物品类型", item_weight: "预估重量", item_volume: "预估体积",
+    insurance_amount: "保价金额", parcel_count: "包裹数量",
+    dept_name: "费用归属部门", project_name: "费用归属项目",
+    pickup_start_time: "预约开始时间", pickup_end_time: "预约截止时间"
+  };
+  if (Array.isArray(detail)) {
+    return detail.map(err => {
+      const key = err.loc?.[err.loc.length - 1] || "请求字段";
+      const message = String(err.msg || "填写有误").replace(/^Value error,\s*/i, "");
+      return `${fieldNames[key] || key}：${message}`;
+    }).join("\n");
+  }
+  if (detail && typeof detail === "object") return detail.message || detail.detail || JSON.stringify(detail);
+  return detail || "未知错误";
+}
+
+function getParcelCount() {
+  return Math.max(1, parseInt(document.getElementById("parcel-count")?.value || "1", 10) || 1);
+}
+function onParcelCountChange() {
+  const input = document.getElementById("parcel-count");
+  let count = getParcelCount();
+  if (count > 307) { count = 307; input.value = "307"; }
+  const multi = count > 1;
+  if (multi && !["SF", "JDL"].includes(currentCourier)) {
+    clearServiceSelection();
+    showAllServices = true;
+  }
+  refreshServiceQuotes();
+}
+
+function openVolumeModal() {
+  document.getElementById("volume-modal").style.display = "flex";
+  calculateVolume();
+}
+function closeVolumeModal() { document.getElementById("volume-modal").style.display = "none"; }
+function calculateVolume() {
+  const l = parseFloat(document.getElementById("volume-length").value) || 0;
+  const w = parseFloat(document.getElementById("volume-width").value) || 0;
+  const h = parseFloat(document.getElementById("volume-height").value) || 0;
+  document.getElementById("volume-total").value = l > 0 && w > 0 && h > 0 ? formatVolume(l * w * h / 1000000) : "";
+}
+function formatVolume(value) {
+  return value.toFixed(6).replace(/\.?0+$/, "");
+}
+function confirmVolume() {
+  const l = parseFloat(document.getElementById("volume-length").value) || 0;
+  const w = parseFloat(document.getElementById("volume-width").value) || 0;
+  const h = parseFloat(document.getElementById("volume-height").value) || 0;
+  if (!(l > 0 && w > 0 && h > 0)) { alert("请完整填写大于0的长、宽、高"); return; }
+  const value = l * w * h / 1000000;
+  document.getElementById("item-volume").value = value.toFixed(6);
+  const trigger = document.getElementById("item-volume-trigger");
+  trigger.textContent = formatVolume(value) + " m³（" + l + "×" + w + "×" + h + " cm）";
+  trigger.classList.add("has-value");
+  trigger.classList.remove("required");
+  closeVolumeModal();
+  refreshServiceQuotes();
+}
+function syncOptionalPanelStyles() {
+  document.querySelector(".insurance-panel")?.classList.toggle(
+    "selected", Boolean(document.getElementById("insurance-enabled")?.checked)
+  );
+}
+
+function syncInsuranceAvailability() {
+  const checkbox = document.getElementById("insurance-enabled");
+  const panel = document.querySelector(".insurance-panel");
+  const note = document.getElementById("insurance-capability-note");
+  if (!checkbox || !panel || !note) return;
+  const input = document.getElementById("insurance-amount");
+  checkbox.disabled = false;
+  panel.classList.remove("unavailable");
+  if (input) input.max = currentCourier === "JDL" ? "300000" : "";
+  note.textContent = currentCourier === "JDL"
+    ? "京东普通保价，声明价值须大于0且不超过300000元"
+    : "贵重物品建议按照可证明的实际价值足额保价";
+}
+
+function toggleInsurance() {
+  if (document.getElementById("insurance-enabled").disabled) return;
+  const enabled = document.getElementById("insurance-enabled").checked;
+  syncOptionalPanelStyles();
+  const fields = document.getElementById("insurance-fields");
+  const input = document.getElementById("insurance-amount");
+  fields.hidden = !enabled;
+  input.disabled = !enabled;
+  input.required = enabled;
+  if (!enabled) input.value = "";
+  updateInsuranceEstimate();
+  scheduleServiceQuotes();
+  refreshRequiredValidation();
+}
+function estimatedInsuranceFee() {
+  if (!document.getElementById("insurance-enabled")?.checked) return 0;
+  const amount = parseFloat(document.getElementById("insurance-amount")?.value || "0");
+  if (!(amount > 0)) return null;
+  const returnedRaw = getSelectedQuote()?.insurance_fee;
+  const returned = returnedRaw == null ? NaN : Number(returnedRaw);
+  if (Number.isFinite(returned)) return returned;
+  if (currentCourier === "SF") {
+    return amount <= 500 ? 1 : (amount <= 1000 ? 2 : amount * 0.005);
+  }
+  if (currentCourier === "JDL") return null;
+  return amount * (amount <= 5000 ? 0.004 : 0.005);
+}
+function getSelectedQuote() {
+  const quotes = QUOTE_STATE.items || [];
+  const directMatch = quotes.find(item => item.id === currentServiceId);
+  if (directMatch) return directMatch;
+
+  const expressType = document.getElementById("express_type")?.value || "";
+  const courierType = document.getElementById("courier_type")?.value || "";
+  const selectedService = ALL_SERVICES.find(service =>
+    String(service.express_type) === String(expressType)
+      && (!courierType || service.courier === courierType)
+  );
+  return selectedService ? quotes.find(item => item.id === selectedService.id) : null;
+}
+function updateOrderSummary() {
+  const selectedQuote = getSelectedQuote();
+  const parsedFreight = selectedQuote?.estimated_fee == null
+    ? NaN : Number(selectedQuote.estimated_fee);
+  const freight = Number.isFinite(parsedFreight) ? parsedFreight : null;
+  const insurance = estimatedInsuranceFee();
+  const returnedTotalRaw = selectedQuote?.estimated_total_fee;
+  const returnedTotal = returnedTotalRaw == null ? NaN : Number(returnedTotalRaw);
+  const freightEl = document.getElementById("summary-freight");
+  const insuranceEl = document.getElementById("summary-insurance");
+  const totalEl = document.getElementById("summary-total");
+  if (freightEl) freightEl.textContent = freight == null ? "--" : freight.toFixed(2);
+  if (insuranceEl) insuranceEl.textContent = insurance == null ? "--" : insurance.toFixed(2);
+  if (totalEl) totalEl.textContent = Number.isFinite(returnedTotal)
+    ? returnedTotal.toFixed(2)
+    : (freight != null && insurance != null ? (freight + insurance).toFixed(2) : "--");
+}
+function updateInsuranceEstimate() {
+  const output = document.getElementById("insurance-estimate");
+  if (!output) return;
+  const amount = parseFloat(document.getElementById("insurance-amount")?.value || "0");
+  if (!(amount > 0)) {
+    output.textContent = "填写金额后显示预计保价费";
+    updateOrderSummary();
+    return;
+  }
+  let fee;
+  let rule;
+  const returnedRaw = getSelectedQuote()?.insurance_fee;
+  const returned = returnedRaw == null ? NaN : Number(returnedRaw);
+  if (Number.isFinite(returned)) {
+    fee = returned;
+    rule = currentCourier === "JDL" ? "京东实时返回" : currentCourier === "DB" ? "德邦实时返回" : "顺丰保价规则试算";
+  } else if (currentCourier === "SF") {
+    fee = amount <= 500 ? 1 : (amount <= 1000 ? 2 : amount * 0.005);
+    rule = amount <= 500 ? "500元以内按1元/票" : (amount <= 1000 ? "500至1000元按2元/票" : "按普通物品5‰试算");
+  } else if (currentCourier === "DB") {
+    fee = amount * (amount <= 5000 ? 0.004 : 0.005);
+    rule = amount <= 5000 ? "按普通物品4‰试算" : "按普通物品5‰试算";
+  } else if (currentCourier === "JDL") {
+    output.textContent = "正在通过京东下单前置校验获取保价费";
+    updateOrderSummary();
+    return;
+  } else { output.textContent = "请先选择快递产品"; updateOrderSummary(); return; }
+  output.textContent = "预计保价费 ¥" + fee.toFixed(2) + "（" + rule + "；易碎易损品及协议价可能不同）";
+  updateOrderSummary();
+}
+
+
+function collectApiPreviewData() {
+  const form = document.getElementById("order-form");
+  const data = Object.fromEntries(new FormData(form));
+  return {
+    courier_type: data.courier_type || currentCourier || "",
+    debug_region_code: SELECTED_REGION,
+    sender_name: data.sender_name || "", sender_phone: data.sender_phone || "",
+    sender_company: data.sender_company || null,
+    sender_province: data.sender_province || "", sender_city: data.sender_city || "",
+    sender_district: data.sender_district || "", sender_address: data.sender_address || "",
+    receiver_name: data.receiver_name || "", receiver_phone: data.receiver_phone || "",
+    receiver_company: data.receiver_company || null,
+    receiver_province: data.receiver_province || "", receiver_city: data.receiver_city || "",
+    receiver_district: data.receiver_district || "", receiver_address: data.receiver_address || "",
+    item_name: data.item_name || "", item_weight: Number(data.item_weight || 0),
+    item_volume: data.item_volume ? Number(data.item_volume) : null,
+    insurance_amount: Number(data.insurance_amount || 0), parcel_count: getParcelCount(),
+    pickup_time_mode: data.pickup_time_mode || "immediate",
+    pickup_start_time: data.pickup_start_time || null, pickup_end_time: data.pickup_end_time || null,
+    item_remark: data.item_remark || null, express_type: data.express_type || "2",
+  };
+}
+
+function apiPreviewMissing(data) {
+  const fields = ["sender_name","sender_phone","sender_province","sender_city","sender_district","sender_address",
+    "receiver_name","receiver_phone","receiver_province","receiver_city","receiver_district","receiver_address","item_name"];
+  return fields.filter(key => !data[key]);
+}
+
+function scheduleApiPreview() {
+  if (!apiDebugEnabled) return;
+  clearTimeout(apiPreviewTimer);
+  apiPreviewTimer = setTimeout(refreshApiPreview, 300);
+}
+
+async function refreshApiPreview() {
+  if (!apiDebugEnabled) return;
+  const status = document.getElementById("api-request-status");
+  const data = collectApiPreviewData();
+  const missing = apiPreviewMissing(data);
+  if (missing.length || !(data.item_weight > 0)) {
+    apiPreviewRequests = [];
+    document.getElementById("api-request-tabs").innerHTML = "";
+    document.getElementById("api-request-code").textContent = "";
+    status.className = "api-request-status";
+    status.textContent = "请先完整填写收寄件、物品、重量和快递产品信息，报文会自动生成。";
+    return;
+  }
+  status.className = "api-request-status";
+  status.textContent = "正在生成请求…";
+  try {
+    const courierType = data.courier_type === "DB" ? "db" : (data.courier_type === "JDL" ? "jdl" : "sf");
+    document.getElementById("api-request-summary").textContent =
+      "查看" + ({db:"德邦",jdl:"京东物流",sf:"顺丰"}[courierType]) + " API 请求（联调检查）";
+    const response = await fetch("/api/courier/" + courierType + "/request-preview", {
+      method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(data),
+    });
+    const result = await response.json();
+    if (!response.ok || !result.ok) throw new Error(formatApiError(result.detail));
+    apiPreviewRequests = result.requests || [];
+    if (!apiPreviewRequests.some(item => item.key === activeApiPreviewKey)) activeApiPreviewKey = "quote";
+    status.textContent = "已按当前页面信息生成；修改字段后会自动刷新。";
+    renderApiPreview();
+  } catch (error) {
+    status.className = "api-request-status error";
+    status.textContent = "请求生成失败：" + error.message;
+  }
+}
+
+function renderApiPreview() {
+  const tabs = document.getElementById("api-request-tabs");
+  tabs.innerHTML = apiPreviewRequests.map(item => '<button type="button" class="' +
+    (item.key === activeApiPreviewKey ? 'active' : '') + '" onclick="selectApiPreview(\'' + item.key + '\')">' + item.title + '</button>').join("");
+  const item = apiPreviewRequests.find(entry => entry.key === activeApiPreviewKey) || apiPreviewRequests[0];
+  document.getElementById("api-request-code").textContent = item ? JSON.stringify({
+    url: item.url, method: item.method, contentType: item.contentType, form: item.form, note: item.note,
+  }, null, 2) : "";
+}
+
+function selectApiPreview(key) {
+  activeApiPreviewKey = key;
+  renderApiPreview();
+}
+
+async function submitOrder() {
+  const f = document.getElementById("order-form");
+  const batchMode = batchModeActive;
+  clearSubmitError();
+  if (!refreshRequiredValidation(true).ok) return;
+
+  try {
+    await window.addressSelectorReady;
+  } catch (error) {
+    showSubmitError("地址控件加载失败", error.message || "省市区数据未能加载，请刷新页面后重试");
+    return;
+  }
+  const addressCheck = validateAllAddressSelectors({includeReceiver: !batchMode});
+  if (!addressCheck.ok) {
+    showSubmitError("地址信息有误", addressCheck.message);
+    return;
+  }
+
+  const data = Object.fromEntries(new FormData(f));
+  Object.keys(data).forEach(key => {
+    if (data[key] === "") delete data[key];
+  });
+  data.debug_region_code = SELECTED_REGION;
+  if (!data.dept_name) {
+    showSubmitError("信息不完整", "请选择费用归属部门");
+    return;
+  }
+  if (data.cost_type === "project" && !data.project_name) {
+    showSubmitError("信息不完整", "请选择费用归属项目");
+    return;
+  }
+  if (getParcelCount() > 1 && !["SF", "JDL"].includes(data.courier_type)) {
+    showSubmitError("快递产品不可用", "多包裹下单目前只支持顺丰和京东，请重新选择产品");
+    return;
+  }
+  if (document.getElementById("insurance-enabled").checked && !(parseFloat(data.insurance_amount) > 0)) {
+    showSubmitError("保价信息有误", "请输入大于0元的物品声明价值");
+    return;
+  }
+  const selectedQuote = (QUOTE_STATE.items || []).find(item => item.id === currentServiceId);
+  if (!batchMode && selectedQuote?.quote_available !== true) {
+    const missing = quoteMissingFields();
+    showSubmitError("暂时无法提交",
+      missing.length
+        ? "运费和时效尚未查询，请先填写：" + missing.join("、")
+        : "当前产品未同时返回价格和时效，请重新查询或选择其他可用产品");
+    return;
+  }
+  if (!batchMode && selectedQuote?.estimated_fee != null && Number.isFinite(Number(selectedQuote.estimated_fee))) {
+    data.estimated_freight = Number(selectedQuote.estimated_fee);
+  }
+  if (data.pickup_time_mode === "appointment") {
+    if (!data.pickup_start_time || !data.pickup_end_time) {
+      showSubmitError("预约时间不完整", "请选择预约上门的日期和两小时上门时间段");
+      return;
+    }
+    const start = new Date(data.pickup_start_time);
+    const end = new Date(data.pickup_end_time);
+    if (start <= new Date()) {
+      showSubmitError("预约时间无效", "预约开始时间必须晚于当前时间");
+      return;
+    }
+    if (end <= start) {
+      showSubmitError("预约时间无效", "预约截止时间必须晚于开始时间");
+      return;
+    }
+  }
+
+  if (batchMode) {
+    if (!batchDraftId) {
+      showSubmitError("批量信息不完整", "请先点击“批量寄件”导入收件人");
+      return;
+    }
+    const submitBtn = document.getElementById("submit-btn");
+    const oldSubmitText = submitBtn.textContent;
+    submitBtn.disabled = true;
+    submitBtn.textContent = batchPrecheckReady ? "正在提交审批..." : "正在逐票查询费用和时效...";
+    try {
+      if (!batchPrecheckReady) {
+        const bd = await fetch("/api/batches/" + batchDraftId);
+        const bj = await readResponsePayload(bd);
+        if (!bd.ok || !bj.ok) throw new Error(formatApiError(bj.detail || "获取批次失败"));
+        const rows = bj.batch.details || [];
+        const cr = await fetch("/api/batches/" + batchDraftId + "/commit", {
+          method:"POST", headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({rows:rows, batch_fields:data})
+        });
+        const cj = await readResponsePayload(cr);
+        if (!cr.ok || !cj.ok) {
+          const details = (cj.errors || []).slice(0, 5)
+            .map(item => (item.receiver_name || "未命名收件人") + "：" + (item.message || "校验失败"))
+            .join("\n");
+          throw new Error(formatApiError(cj.detail || "预下单校验未通过") + (details ? "\n" + details : ""));
+        }
+        batchPrecheckReady = true;
+        renderBatchQuoteReview(cj);
+        submitBtn.disabled = false;
+        submitBtn.textContent = `确认预估总额 ¥${batchEstimatedTotal.toFixed(2)} 并提交审批`;
+        document.getElementById('batch-quote-review')?.scrollIntoView({behavior:'smooth', block:'center'});
+        showToast("逐票费用和时效已查询，请确认后提交审批");
+        return;
+      }
+
+      const response = await fetch("/api/batches/" + batchDraftId + "/submit", {method:"POST"});
+      const result = await readResponsePayload(response);
+      if (!response.ok || !result.ok) throw new Error(formatApiError(result.detail || "提交审批失败"));
+      alert("批量提交成功！" + batchTicketQuotes.length + " 票已作为 1 个批次提交审批");
+      location.href = "/orders";
+    } catch (error) {
+      const message = /Failed to fetch|NetworkError/i.test(String(error.message))
+        ? "无法连接服务器，请检查网络或确认系统服务正在运行"
+        : error.message;
+      showSubmitError("批量提交失败", message);
+      submitBtn.disabled = false;
+      submitBtn.textContent = oldSubmitText;
+    }
+    return;
+  }
+
+  data.save_receiver_address = Boolean(document.getElementById("save-receiver-address")?.checked);
+  const submitBtn = document.getElementById("submit-btn");
+  const oldSubmitText = submitBtn.textContent;
+  submitBtn.disabled = true;
+  submitBtn.textContent = data.courier_type === "SF" ? "正在进行顺丰预下单检查..."
+    : (data.courier_type === "JDL" ? "正在进行京东下单前检查..." : "正在提交...");
+  try {
+    const response = await fetch("/api/orders", {
+      method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(data)
+    });
+    const result = await readResponsePayload(response);
+    if (!response.ok || !result.ok) {
+      throw new Error(formatApiError(result.detail || result.message || "接口未返回成功"));
+    }
+    const saveMessage = result.receiver_address_saved ? "\n收件信息已保存到个人地址簿。" : "";
+    alert("提交成功，等待审批。" + saveMessage);
+    location.href = "/orders";
+  } catch (error) {
+    const message = /Failed to fetch|NetworkError/i.test(String(error.message))
+      ? "无法连接服务器，请检查网络或确认系统服务正在运行"
+      : error.message;
+    showSubmitError("提交失败", message);
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = oldSubmitText;
+  }
+}
+
+let receiverAddressItems = [];
+async function fillReceiverFromAddress() {
+  const r = await fetch("/api/courier/addresses?scope=personal&role=receiver");
+  const j = await r.json();
+  if (!r.ok || !j.ok) { alert(j.detail || "地址簿读取失败"); return; }
+  receiverAddressItems = j.items || [];
+  if (!receiverAddressItems.length) { alert("个人地址簿为空，请先添加"); return; }
+  document.getElementById("receiver-address-search").value = "";
+  renderReceiverAddressChoices();
+  document.getElementById("receiver-address-modal").style.display = "flex";
+  document.body.style.overflow = "hidden";
+}
+function closeReceiverAddressModal() {
+  document.getElementById("receiver-address-modal").style.display = "none";
+  document.body.style.overflow = "";
+}
+function renderReceiverAddressChoices() {
+  const keyword = document.getElementById("receiver-address-search").value.trim().toLowerCase();
+  const filtered = receiverAddressItems.filter(a => !keyword || [a.label,a.name,a.phone,a.company_name,a.province,a.city,a.district,a.detail].join(" ").toLowerCase().includes(keyword));
+  const box = document.getElementById("receiver-address-choices");
+  if (!filtered.length) { box.innerHTML = '<div style="padding:28px;text-align:center;color:#94a3b8">没有匹配的地址</div>'; return; }
+  box.innerHTML = filtered.map(a => `<button type="button" class="sender-address-option" onclick="chooseReceiverAddress(${Number(a.id)})"><span><i class="address-radio"></i>${batchEsc(a.label || a.name || '未命名')}</span><span>${batchEsc([a.province,a.city,a.district,a.detail].filter(Boolean).join(''))}</span><span>${batchEsc(a.name)} · ${batchEsc(a.phone)}</span></button>`).join('');
+}
+async function chooseReceiverAddress(id) {
+  const a = receiverAddressItems.find(item => Number(item.id) === Number(id));
+  if (!a) return;
+  const f = document.getElementById("order-form");
+  f.elements.receiver_name.value = a.name; f.elements.receiver_phone.value = a.phone;
+  f.elements.receiver_company.value = a.company_name || "";
+  await setAddressSelection("receiver", a.province, a.city, a.district);
+  f.elements.receiver_address.value = a.detail || "";
+  closeReceiverAddressModal();
+  refreshRequiredValidation();
+  updateQuoteMissingNotice();
+  refreshServiceQuotes();
+}
+
+const SENDER_ADDRESSES = Object.fromEntries({{ sender_address_items|tojson }}.map(address => [String(address.id), address]));
+
+function openSenderAddressModal() {
+  document.getElementById("sender-address-search").value = "";
+  filterSenderAddressChoices();
+  document.getElementById("sender-address-modal").style.display = "flex";
+  document.body.style.overflow = "hidden";
+}
+
+function filterSenderAddressChoices() {
+  const keyword = document.getElementById("sender-address-search").value.trim().toLowerCase();
+  document.querySelectorAll("#sender-address-modal .sender-address-option").forEach(option => {
+    option.style.display = !keyword || option.textContent.toLowerCase().includes(keyword) ? "grid" : "none";
+  });
+}
+
+function closeSenderAddressModal() {
+  document.getElementById("sender-address-modal").style.display = "none";
+  document.body.style.overflow = "";
+}
+
+async function selectSenderAddress(id) {
+  const f = document.getElementById("order-form");
+  document.querySelectorAll(".sender-address-option").forEach(option => {
+    option.classList.toggle("selected", option.dataset.addressId === id);
+  });
+  if (id === "custom") {
+    f.elements.sender_company.value = "";
+    await setAddressSelection("sender", "", "", "");
+    f.elements.sender_address.value = "";
+    document.getElementById("sender-address-summary").style.display = "none";
+    document.getElementById("sender-custom-fields").style.display = "block";
+    closeSenderAddressModal();
+    f.elements.sender_company.focus();
+    refreshRequiredValidation();
+    updateQuoteMissingNotice();
+    scheduleServiceQuotes();
+    return;
+  }
+  const address = SENDER_ADDRESSES[id];
+  if (!address) return;
+  f.elements.sender_company.value = address.company;
+  await setAddressSelection("sender", address.province, address.city, address.district);
+  f.elements.sender_address.value = address.detail;
+  document.getElementById("sender-address-name").textContent = address.name;
+  document.getElementById("sender-company-preview").textContent = address.company;
+  document.getElementById("sender-region-preview").textContent =
+    address.province + " / " + address.city + " / " + address.district;
+  document.getElementById("sender-detail-preview").textContent = address.detail;
+  const summary = document.getElementById("sender-address-summary");
+  summary.style.display = "grid";
+  summary.classList.remove("empty");
+  document.getElementById("sender-custom-fields").style.display = "none";
+  closeSenderAddressModal();
+  refreshRequiredValidation();
+  updateQuoteMissingNotice();
+  refreshServiceQuotes();
+}
+
+const PICKUP_WEEKDAYS = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+let selectedPickupDay = null;
+
+function pickupDate(offset) {
+  const value = new Date();
+  value.setHours(0, 0, 0, 0);
+  value.setDate(value.getDate() + offset);
+  return value;
+}
+
+function pickupDateTime(offset, hour) {
+  const value = pickupDate(offset);
+  value.setHours(hour, 0, 0, 0);
+  const pad = number => String(number).padStart(2, "0");
+  return value.getFullYear() + "-" + pad(value.getMonth() + 1) + "-" + pad(value.getDate()) +
+    "T" + pad(value.getHours()) + ":00";
+}
+
+function clearPickupSelection() {
+  document.querySelectorAll(".pickup-choice,.pickup-slot-grid button").forEach(button => button.classList.remove("selected"));
+  document.getElementById("pickup-start-time").value = "";
+  document.getElementById("pickup-end-time").value = "";
+}
+
+function setPickupTimeNote(message) {
+  const note = document.getElementById("pickup-time-note");
+  if (note) note.textContent = message;
+}
+
+async function refreshQuotesAfterPickupChange() {
+  // 预约取件时间会影响承运商返回的预计送达时间。只在选定完整
+  // 时间段（或切回立即上门）后重查，避免只点日期时发出无效请求。
+  const mode = document.getElementById("pickup-time-mode")?.value;
+  const start = document.getElementById("pickup-start-time")?.value || "";
+  const selectedText = mode === "appointment"
+    ? ("已选择：" + start.slice(0, 10) + " "
+      + (document.querySelector("#pickup-slot-grid button.selected")?.textContent || ""))
+    : "“立即上门”不指定时间";
+  const pickupFingerprint = mode + "|" + start;
+  setPickupTimeNote(selectedText + "，正在按该时间重新查询运费和预计送达…");
+  // 时间变更必须绕过后端报价缓存，否则切回曾查过的时段时
+  // 会看起来像没有重新查询。
+  const refreshed = await refreshServiceQuotes(true, true);
+  const currentFingerprint = (document.getElementById("pickup-time-mode")?.value || "")
+    + "|" + (document.getElementById("pickup-start-time")?.value || "");
+  if (currentFingerprint !== pickupFingerprint) return;
+  setPickupTimeNote(selectedText + (refreshed
+    ? "，已按该时间更新运费和预计送达。"
+    : "，承运商暂未完整返回，产品仍可选，最终以受理为准。"));
+  scheduleApiPreview();
+}
+
+function selectImmediatePickup(refreshQuotes = true) {
+  selectedPickupDay = null;
+  clearPickupSelection();
+  document.getElementById("pickup-time-mode").value = "immediate";
+  document.getElementById("pickup-immediate").classList.add("selected");
+  document.getElementById("pickup-slot-panel").hidden = true;
+  setPickupTimeNote("“立即上门”不指定时间，具体接单和上门时间由所选快递公司的当地网点安排。");
+  refreshRequiredValidation();
+  if (refreshQuotes) refreshQuotesAfterPickupChange();
+}
+
+function selectPickupDay(offset) {
+  selectedPickupDay = offset;
+  clearPickupSelection();
+  document.getElementById("pickup-time-mode").value = "appointment";
+  document.querySelector('.pickup-day[data-day-offset="' + offset + '"]').classList.add("selected");
+  document.getElementById("pickup-slot-panel").hidden = false;
+  const now = new Date();
+  document.querySelectorAll("#pickup-slot-grid button").forEach(button => {
+    const start = new Date(pickupDateTime(offset, Number(button.dataset.start)));
+    button.disabled = start <= now;
+    button.onclick = () => selectPickupSlot(button);
+  });
+  setPickupTimeNote("请选择一个两小时上门时间段。");
+  refreshRequiredValidation();
+}
+
+function selectPickupSlot(button) {
+  if (button.disabled || selectedPickupDay === null) return;
+  document.querySelectorAll("#pickup-slot-grid button").forEach(item => item.classList.remove("selected"));
+  button.classList.add("selected");
+  const start = pickupDateTime(selectedPickupDay, Number(button.dataset.start));
+  const end = pickupDateTime(selectedPickupDay, Number(button.dataset.end));
+  document.getElementById("pickup-start-time").value = start;
+  document.getElementById("pickup-end-time").value = end;
+  setPickupTimeNote("已选择：" + start.slice(0, 10) + " " + button.textContent);
+  refreshRequiredValidation();
+  refreshQuotesAfterPickupChange();
+}
+
+function initPickupScheduler() {
+  const now = new Date();
+  document.querySelectorAll(".pickup-day").forEach(button => {
+    const offset = Number(button.dataset.dayOffset);
+    const date = pickupDate(offset);
+    button.querySelector("span").textContent = "（" + PICKUP_WEEKDAYS[date.getDay()] + "）";
+    if (offset === 0) {
+      const lastStart = new Date(pickupDateTime(0, 18));
+      button.disabled = lastStart <= now;
+    }
+  });
+  selectImmediatePickup(false);
+}
+
+document.addEventListener("DOMContentLoaded", function() {
+  const f = document.getElementById("order-form");
+  bindPhoneLengthLimit("sender_phone");
+  bindPhoneLengthLimit("receiver_phone");
+  const quoteFields = ["item_weight", "item_volume", "sender_province", "sender_city",
+    "sender_district", "sender_address", "receiver_province", "receiver_city",
+    "receiver_district", "receiver_address"];
+  quoteFields.forEach(name => {
+    f.elements[name]?.addEventListener("input", () => {
+      updateQuoteMissingNotice();
+      scheduleServiceQuotes();
+    });
+    f.elements[name]?.addEventListener("change", () => {
+      updateQuoteMissingNotice();
+      scheduleServiceQuotes();
+    });
+  });
+  f.addEventListener("input", () => {
+    clearSubmitError();
+    refreshRequiredValidation();
+  });
+  f.addEventListener("change", () => {
+    clearSubmitError();
+    refreshRequiredValidation();
+  });
+  if (apiDebugEnabled) {
+    document.getElementById("api-request-inspector").hidden = false;
+    f.addEventListener("input", scheduleApiPreview);
+    f.addEventListener("change", scheduleApiPreview);
+    scheduleApiPreview();
+  }
+  initPickupScheduler();
+  syncOptionalPanelStyles();
+  syncInsuranceAvailability();
+  updateQuoteMissingNotice();
+  setTimeout(() => refreshRequiredValidation(), 0);
+});
+</script>
+
+<script>
+/* ========== 费用归属切换 ========== */
+function onCostType() {
+  const type = document.querySelector('input[name="cost_type"]:checked')?.value || 'department';
+  const deptBox = document.getElementById('cost-dept-box');
+  const projBox = document.getElementById('cost-proj-box');
+  const deptOpt = document.getElementById('cost-opt-dept');
+  const projOpt = document.getElementById('cost-opt-proj');
+  if (deptBox) deptBox.style.display = 'block';
+  document.getElementById('cost_type_input').value=type;
+  if (type === 'department') {
+    if (projBox) projBox.style.display = 'none';
+    if (deptOpt) deptOpt.style.borderColor = 'var(--primary)';
+    if (projOpt) projOpt.style.borderColor = 'var(--border)';
+    const projectSelect=document.getElementById('project-select');
+    if (projectSelect) {
+      projectSelect.value='';
+      onProjectChange();
+      window.refreshSearchableSelect?.(projectSelect);
+    }
+  } else {
+    if (projBox) projBox.style.display = 'block';
+    if (deptOpt) deptOpt.style.borderColor = 'var(--border)';
+    if (projOpt) projOpt.style.borderColor = 'var(--primary)';
+    // 项目可能属于不同执行部门。切换到项目费用时先清空两项，选定项目后
+    // 再按 CRM 项目关系带入部门；带入后部门下拉仍保持可编辑。
+    const deptSelect=document.getElementById('dept-select');
+    const projectSelect=document.getElementById('project-select');
+    if (deptSelect) {
+      deptSelect.value='';
+      onDeptChange();
+      window.refreshSearchableSelect?.(deptSelect);
+    }
+    if (projectSelect) {
+      projectSelect.value='';
+      onProjectChange();
+      window.refreshSearchableSelect?.(projectSelect);
+    }
+  }
+  refreshRequiredValidation();
+}
+function onDeptChange() {
+  const select=document.getElementById('dept-select');
+  const option=select?.selectedOptions?.[0];
+  document.getElementById('dept_code_input').value=option?.dataset.code || '';
+  document.getElementById('dept_name_input').value=option?.dataset.name || '';
+  refreshRequiredValidation();
+}
+function onProjectChange() {
+  const select=document.getElementById('project-select');
+  const option=select?.selectedOptions?.[0];
+  document.getElementById('project_code_input').value=option?.dataset.code || '';
+  document.getElementById('project_name_input').value=option?.dataset.name || '';
+  const costType=document.querySelector('input[name="cost_type"]:checked')?.value;
+  if (costType === 'project') {
+    const deptSelect=document.getElementById('dept-select');
+    const deptCode=option?.dataset.deptCode || '';
+    const deptName=option?.dataset.deptName || '';
+    const normalize=value=>String(value||'').replace(/[\\/]/g,'-').replace(/\s+/g,'').replace(/^-+|-+$/g,'');
+    const match=[...(deptSelect?.options || [])].find(item =>
+      (deptCode && String(item.dataset.code || item.value) === String(deptCode))
+      || (deptName && normalize(item.dataset.name) === normalize(deptName))
+    );
+    if (deptSelect) {
+      deptSelect.value=match?.value || '';
+      onDeptChange();
+      window.refreshSearchableSelect?.(deptSelect);
+    }
+  }
+  refreshRequiredValidation();
+}
+
+/* ========== 批量寄件功能 ========== */
+let batchImportRows = null;  // 全量收件人数据
+let batchSampleRows = null;  // 预览数据
+let batchDraftId = null;
+var batchModeActive = false;
+let batchPrecheckReady = false;
+let batchTicketQuotes = [];
+let batchEstimatedTotal = 0;
+let batchQuoteRefreshTimer = null;
+let batchQuoteRefreshing = false;
+let batchQuoteRefreshQueued = false;
+function batchEsc(value) {
+  return String(value ?? '').replace(/[&<>'"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[ch]));
+}
+
+async function refreshQuotesNow() {
+  clearTimeout(quoteRefreshTimer);
+  const button = document.getElementById("refresh-quotes-btn");
+  const original = button?.textContent || "↻ 刷新运费和时效";
+  if (button) {
+    button.disabled = true;
+    button.textContent = "正在重新查询…";
+  }
+  const refreshed = await refreshServiceQuotes(true, true);
+  scheduleApiPreview();
+  if (button) {
+    button.textContent = refreshed ? "✓ 已刷新" : "刷新失败，请重试";
+    setTimeout(() => {
+      button.disabled = false;
+      button.textContent = original;
+    }, 1200);
+  }
+}
+
+function setBatchMode(active) {
+  batchModeActive = active;
+  const singleBox = document.getElementById('single-receiver');
+  const batchBox = document.getElementById('batch-receiver');
+  const entryTip = document.getElementById('batch-entry-tip');
+  singleBox.style.display = active ? 'none' : 'block';
+  batchBox.style.display = active ? 'block' : 'none';
+  if (entryTip) entryTip.style.display = active ? 'none' : 'grid';
+  singleBox.querySelectorAll('input,textarea,select').forEach(field => field.disabled = active);
+  document.getElementById('receiver-title').textContent = active ? '📦 批量收件人' : '🧑‍💼 收件人信息';
+  document.getElementById('submit-btn').textContent = active ? '查询逐票费用和时效' : '提交审批';
+  refreshRequiredValidation();
+  updateQuoteMissingNotice();
+}
+
+function resetBatchQuoteReview() {
+  const panel = document.getElementById('batch-quote-review');
+  if (!panel) return;
+  panel.hidden = false;
+  panel.innerHTML = '<div class="batch-quote-empty"><strong>逐票费用与预计送达</strong><span>完善寄件信息后即可查询。</span></div>';
+}
+
+function renderBatchQuoteReview(payload) {
+  batchTicketQuotes = payload.tickets || [];
+  const panel = document.getElementById('batch-quote-review');
+  if (!panel) return;
+  const total = Number(payload.estimated_total || 0);
+  batchEstimatedTotal = total;
+  const withEta = batchTicketQuotes.filter(item => item.estimated_delivery).length;
+  const rows = batchTicketQuotes.map((item, index) => {
+    const fee = item.estimated_fee == null ? '以承运商结算为准' : '¥' + Number(item.estimated_fee).toFixed(2);
+    const eta = item.estimated_delivery ? String(item.estimated_delivery).replace('T', ' ').slice(0, 16) : '以承运商受理为准';
+    return `<tr><td>${index + 1}. ${batchEsc(item.receiver_name || '')}</td><td>${batchEsc(item.destination || '')}</td><td>${fee}</td><td>${batchEsc(eta)}</td></tr>`;
+  }).join('');
+  panel.innerHTML = `<div class="batch-quote-summary"><span>逐票校验 <strong>${batchTicketQuotes.length}</strong> 票</span><span>预估合计 <strong>¥${total.toFixed(2)}</strong></span><span>已返回时效 ${withEta}/${batchTicketQuotes.length}</span><button type="button" id="batch-quote-refresh" class="batch-quote-refresh" onclick="refreshBatchQuotes(true)">↻ 刷新费用和时效</button></div><div class="batch-quote-table-wrap"><table class="batch-quote-table"><thead><tr><th>收件人</th><th>目的地</th><th>预估费用</th><th>预计送达</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  const submitButton = document.getElementById('submit-btn');
+  if (batchPrecheckReady && submitButton) {
+    submitButton.textContent = `确认预估总额 ¥${total.toFixed(2)} 并提交审批`;
+  }
+  panel.hidden = false;
+}
+
+function currentBatchFields() {
+  const form = document.getElementById('order-form');
+  const data = Object.fromEntries(new FormData(form));
+  Object.keys(data).forEach(key => {
+    if (data[key] === '') delete data[key];
+  });
+  data.debug_region_code = SELECTED_REGION;
+  return data;
+}
+
+function scheduleBatchQuoteRefresh() {
+  if (!batchModeActive || !batchPrecheckReady || !batchDraftId) return;
+  clearTimeout(batchQuoteRefreshTimer);
+  batchQuoteRefreshTimer = setTimeout(() => refreshBatchQuotes(false), 450);
+}
+
+async function refreshBatchQuotes(manual = false) {
+  clearTimeout(batchQuoteRefreshTimer);
+  if (!batchModeActive || !batchPrecheckReady || !batchDraftId) return;
+  if (batchQuoteRefreshing) {
+    batchQuoteRefreshQueued = true;
+    return;
+  }
+  batchQuoteRefreshing = true;
+  let refreshSucceeded = false;
+  const requestedServiceId = currentServiceId;
+  const button = document.getElementById('batch-quote-refresh');
+  const submitButton = document.getElementById('submit-btn');
+  if (button) {
+    button.disabled = true;
+    button.textContent = '正在刷新…';
+  }
+  if (submitButton) submitButton.disabled = true;
+  try {
+    const response = await fetch(`/api/batches/${batchDraftId}/quotes`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({batch_fields: currentBatchFields()}),
+    });
+    const result = await readResponsePayload(response);
+    if (!response.ok || !result.ok) {
+      const detail = result.detail;
+      const message = detail && typeof detail === 'object'
+        ? (detail.message || '费用和时效刷新失败')
+        : formatApiError(detail || '费用和时效刷新失败');
+      throw new Error(message);
+    }
+    if (requestedServiceId !== currentServiceId) {
+      batchQuoteRefreshQueued = true;
+      return;
+    }
+    renderBatchQuoteReview(result);
+    refreshSucceeded = true;
+    if (manual) showToast('逐票费用和时效已刷新');
+  } catch (error) {
+    showSubmitError('刷新失败', error.message || '请稍后重试');
+  } finally {
+    batchQuoteRefreshing = false;
+    if (submitButton) {
+      submitButton.disabled = !refreshSucceeded;
+      submitButton.textContent = `确认预估总额 ¥${batchEstimatedTotal.toFixed(2)} 并提交审批`;
+    }
+    const latestButton = document.getElementById('batch-quote-refresh');
+    if (latestButton) {
+      latestButton.disabled = false;
+      latestButton.textContent = '↻ 刷新费用和时效';
+    }
+    if (batchQuoteRefreshQueued) {
+      batchQuoteRefreshQueued = false;
+      batchQuoteRefreshTimer = setTimeout(() => refreshBatchQuotes(false), 80);
+    }
+  }
+}
+
+async function exitBatchMode() {
+  if (batchDraftId) {
+    try { await fetch('/api/batches/' + batchDraftId, {method:'DELETE'}); } catch (_) {}
+  }
+  batchImportRows = null; batchSampleRows = null; batchDraftId = null;
+  batchPrecheckReady = false; batchTicketQuotes = []; batchEstimatedTotal = 0;
+  const review = document.getElementById('batch-quote-review');
+  resetBatchQuoteReview();
+  setBatchMode(false);
+}
+
+
+
+function openBatchModal() {
+  document.getElementById('batch-modal').style.display = 'flex';
+  document.getElementById('batch-result').innerHTML = '';
+  document.getElementById('batch-confirm').style.display = 'none';
+}
+function closeBatchModal() {
+  document.getElementById('batch-modal').style.display = 'none';
+  document.getElementById('batch-file').value = '';
+}
+
+function bindBatchDropzone() {
+  const dropzone = document.getElementById('batch-dropzone');
+  const input = document.getElementById('batch-file');
+  if (!dropzone || !input || dropzone.dataset.bound === '1') return;
+  dropzone.dataset.bound = '1';
+  ['dragenter', 'dragover'].forEach(type => dropzone.addEventListener(type, event => {
+    event.preventDefault();
+    event.stopPropagation();
+    dropzone.classList.add('drag-active');
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+  }));
+  ['dragleave', 'dragend'].forEach(type => dropzone.addEventListener(type, event => {
+    event.preventDefault();
+    event.stopPropagation();
+    dropzone.classList.remove('drag-active');
+  }));
+  dropzone.addEventListener('drop', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    dropzone.classList.remove('drag-active');
+    const files = Array.from(event.dataTransfer?.files || []);
+    if (files.length !== 1) {
+      document.getElementById('batch-result').innerHTML = '<div style="color:#ef4444;padding:12px">❌ 每次请选择一个 .xlsx 文件</div>';
+      return;
+    }
+    handleBatchUpload(files[0]);
+  });
+  dropzone.addEventListener('keydown', event => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      input.click();
+    }
+  });
+}
+bindBatchDropzone();
+
+async function handleBatchUpload(input) {
+  const file = input instanceof File ? input : input?.files?.[0];
+  if (!file) return;
+  if (!/\.xlsx$/i.test(file.name)) {
+    document.getElementById('batch-result').innerHTML = '<div style="color:#ef4444;padding:12px">❌ 仅支持 .xlsx 文件，请使用页面提供的模板</div>';
+    return;
+  }
+  const result = document.getElementById('batch-result');
+  const confirmBtn = document.getElementById('batch-confirm');
+  result.innerHTML = '<div style="color:#64748b;padding:12px">⏳ 正在上传解析...</div>';
+  confirmBtn.style.display = 'none';
+  setBatchMode(false);
+  batchPrecheckReady = false;
+  batchTicketQuotes = [];
+  batchEstimatedTotal = 0;
+  resetBatchQuoteReview();
+
+  // 1. 创建 draft batch
+  try {
+    if (batchDraftId) {
+      await fetch('/api/batches/' + batchDraftId, {method:'DELETE'});
+      batchDraftId = null;
+    }
+    const dr = await fetch('/api/batches/upload-draft', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({debug_region_code: SELECTED_REGION})});
+    const dj = await dr.json();
+    if (!dj.ok) throw new Error(dj.detail || '创建批次失败');
+    batchDraftId = dj.batch_id;
+  } catch(e) {
+    result.innerHTML = '<div style="color:#ef4444;padding:12px">❌ ' + batchEsc(e.message) + '</div>';
+    return;
+  }
+
+  // 2. 上传 Excel
+  const fd = new FormData();
+  fd.append('file', file);
+  try {
+    const ir = await fetch('/api/batches/' + batchDraftId + '/import', {method:'POST', body: fd});
+    const ij = await ir.json();
+    if (!ij.ok) throw new Error(ij.detail || '解析失败');
+    batchSampleRows = ij.sample;  // 预览的前5条
+    const warnings = (ij.max_warnings || []).slice(0, 5);
+    let html = '<div style="background:#f0fdf4;border-radius:10px;padding:14px;margin-bottom:10px;font-size:13px">';
+    html += '✅ 解析完成：<b style="color:#059669">' + ij.ok_count + ' 条有效</b>';
+    if (ij.error_count > 0)
+      html += '，<b style="color:#ef4444">' + ij.error_count + ' 条格式有误</b>';
+    html += ' (共 ' + ij.total + ' 行)</div>';
+    if (warnings.length) {
+      html += '<div style="background:#fef2f2;border-radius:10px;padding:12px;margin-bottom:10px;font-size:12px;color:#dc2626">';
+      html += '⚠️ 问题示例:<ul style="margin:4px 0 0 16px;padding:0">';
+      warnings.forEach(w => html += '<li>第 ' + Number(w.row) + ' 行' + (w.preview?.address ? '（' + batchEsc(w.preview.address) + '）' : '') + ': ' + batchEsc(w.errors.join(', ')) + '</li>');
+      html += '</ul></div>';
+    }
+    if (ij.ok_count > 0) {
+      html += '<div style="font-size:12px;color:#64748b;margin-bottom:6px;font-weight:600">预览前 ' + Math.min(5, ij.ok_count) + ' 条:</div>';
+      html += '<div style="max-height:180px;overflow-y:auto;font-size:12px;background:#f9fafb;border-radius:8px">';
+      (ij.sample || []).forEach(r => {
+        html += '<div style="padding:8px 12px;border-bottom:1px solid #f3f4f6"><b>' + batchEsc(r.receiver_name) + ' · ' + batchEsc(r.receiver_phone) + '</b><div style="color:#64748b;margin-top:3px">原地址：' + batchEsc(r.receiver_full_address) + '</div><div style="color:#047857;margin-top:2px">识别为：' + batchEsc([r.receiver_province,r.receiver_city,r.receiver_district].join(' / ')) + ' · ' + batchEsc(r.receiver_address) + '</div></div>';
+      });
+      html += '</div>';
+      // 暂存确认需要的信息 (ok_count)
+      result.dataset.okCount = ij.ok_count;
+      confirmBtn.style.display = ij.can_commit ? 'inline-block' : 'none';
+      if (!ij.can_commit) html += '<div style="margin-top:10px;color:#dc2626;font-size:12px">请修正全部错误后重新上传；系统不会忽略错误行后部分提交。</div>';
+      result.innerHTML = html;
+    } else {
+      result.innerHTML = '<div style="color:#ef4444;padding:12px">❌ 没有有效收件人，请检查模板格式</div>';
+    }
+  } catch(e) {
+    result.innerHTML = '<div style="color:#ef4444;padding:12px">❌ ' + batchEsc(e.message) + '</div>';
+  }
+}
+
+async function confirmBatchImport() {
+  if (!batchDraftId) return;
+  // 重新 fetch batch detail 拿到全量 rows (通过 import 后服务端已保存)
+  const r = await fetch('/api/batches/' + batchDraftId);
+  const j = await r.json();
+  if (!j.ok) return showToast('❌ ' + (j.detail || '获取批次失败'));
+  const batch = j.batch;
+  // batch.details 里有 rows 吗？让我用 sample + ok_count 来展示
+  const okCount = document.getElementById('batch-result').dataset.okCount;
+  // 简化: 用 batch 的 total_count 和保存的 sample
+  // 显示批量 UI
+  closeBatchModal();
+  batchImportRows = batch.details || [];  // 如果后端返回了的话
+  // 用 sample 做预览展示, ok_count 显示数量
+  document.getElementById('batch-count').textContent = okCount || batch.total_count;
+  const preview = document.getElementById('batch-preview');
+  const rows = batchSampleRows || [];
+  preview.innerHTML = rows.map(r =>
+    '<div style="padding:6px 0;border-bottom:1px solid #ecfdf5"><b>' + batchEsc(r.receiver_name) + ' · ' + batchEsc(r.receiver_phone) + '</b><div style="color:#64748b">' + batchEsc([r.receiver_province,r.receiver_city,r.receiver_district].join(' / ')) + ' · ' + batchEsc(r.receiver_address) + '</div></div>'
+  ).join('');
+  batchPrecheckReady = false;
+  batchTicketQuotes = [];
+  batchEstimatedTotal = 0;
+  resetBatchQuoteReview();
+  setBatchMode(true);
+  showToast('✅ 批量收件人已导入 ' + (okCount || batch.total_count) + ' 条');
+}
+</script>
+
+{% endblock %}
